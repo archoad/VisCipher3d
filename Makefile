@@ -7,7 +7,8 @@
 UNAME_S:=$(shell uname -s)
 
 CC=gcc
-CL=clang
+#CL=gcc
+CL=gcc
 STRIP=strip
 CFLAGS= -O3 -Wall -W -Wstrict-prototypes -Werror
 ifeq ($(UNAME_S),Linux)
@@ -20,23 +21,28 @@ ifeq ($(UNAME_S),Darwin)
 	LFLAGSDIR= -L/opt/local/lib
 	COMPIL=$(CL)
 endif
+GDB_FLAGS= -ggdb
 GL_FLAGS= -lGL -lGLU -lglut
 MATH_FLAGS= -lm
 CRYPTO_FLAGS= -lcrypto
 PNG_FLAGS= -lpng
 
-all: dest_sys visCipherCmp3d visCipher3d cipher
+all: dest_sys visCipherCmp3d visCipher3d cipher vigenere
 
 visCipherCmp3d: visCipherCmp3d.c
-	$(COMPIL) $(CFLAGS) $(IFLAGSDIR) $(LFLAGSDIR) $(GL_FLAGS) $(PNG_FLAGS) $(CRYPTO_FLAGS) $< -o $@
+	$(COMPIL) $(CFLAGS) $(IFLAGSDIR) $(LFLAGSDIR) $(MATH_FLAGS) $(GL_FLAGS) $(PNG_FLAGS) $(CRYPTO_FLAGS) $< -o $@
 	@$(STRIP) $@
 
 visCipher3d: visCipher3d.c
-	$(COMPIL) $(CFLAGS) $(IFLAGSDIR) $(LFLAGSDIR) $(GL_FLAGS) $(PNG_FLAGS) $(CRYPTO_FLAGS) $< -o $@
+	$(COMPIL) $(CFLAGS) $(IFLAGSDIR) $(LFLAGSDIR) $(MATH_FLAGS) $(GL_FLAGS) $(PNG_FLAGS) $(CRYPTO_FLAGS) $< -o $@
 	@$(STRIP) $@
 
 cipher: cipher.c
 	$(COMPIL) $(CFLAGS) $(IFLAGSDIR) $(LFLAGSDIR) $(CRYPTO_FLAGS) $(MATH_FLAGS) $< -o $@
+	@$(STRIP) $@
+
+vigenere: vigenere.c
+	$(COMPIL) $(CFLAGS) $(IFLAGSDIR) $(LFLAGSDIR) $(MATH_FLAGS) $< -o $@
 	@$(STRIP) $@
 
 dest_sys:
@@ -46,3 +52,4 @@ clean:
 	@rm -f visCipherCmp3d
 	@rm -f visCipher3d
 	@rm -f cipher
+	@rm -f vigenere

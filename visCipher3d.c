@@ -1,4 +1,4 @@
-/*visAES3d
+/*visCipher3d
 Copyright (C) 2013 Michel Dubois
 
 This program is free software; you can redistribute it and/or modify
@@ -15,8 +15,6 @@ You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301, USA.*/
 
-// inspired from http://lcamtuf.coredump.cx/oldtcp/tcpseq.html
-// http://www.mpipks-dresden.mpg.de/~tisean/TISEAN_2.1/docs/chaospaper/node6.html
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -30,20 +28,22 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301, USA.*/
 #include <GL/glu.h>
 #include <GL/glut.h>
 
-#define WINDOW_TITLE_PREFIX "visAES3d"
+#define WINDOW_TITLE_PREFIX "visCipher3d"
 #define couleur(param) printf("\033[%sm",param)
 
-static short winSizeW = 800,
-	winSizeH = 600,
+static short winSizeW = 920,
+	winSizeH = 690,
 	frame = 0,
 	currentTime = 0,
 	timebase = 0,
 	fullScreen = 0,
+	displayHilbert = 0,
 	rotate = 0,
 	dt = 5; // in milliseconds
 
 static int textList = 0,
 	objectList = 0,
+	hilbertList = 0,
 	cpt = 0,
 	background = 0,
 	mono = 0;
@@ -56,34 +56,35 @@ static float fps = 0.0,
 	yy = 5.0,
 	zoom = 100.0,
 	prevx = 0.0,
-	prevy = 0.0;
+	prevy = 0.0,
+	sphereRadius = 0.6,
+	squareWidth = 0.055;
 
 static BIGNUM *bn_sum, *bn_average, *bn_max, *bn_min;
 
+static BIGNUM *randList[5000000];
+
 typedef struct _point {
-	double x;
-	double y;
-	double z;
-	double r;
-	double g;
-	double b;
+	GLfloat x, y, z;
+	GLfloat r, g, b;
 } point;
 
 static point *pointsList = NULL;
+static point *hilbertPointList = NULL;
 
 static unsigned long sampleSize = 0,
-	seuil = 70000;
+	hilbertSize = 0,
+	randListSize = 0,
+	seuil = 60000;
 
-static float *vertices = NULL;
-
-double maxAll = 0;
+double maxAll = 0.0;
 
 
 void usage(void) {
 	couleur("31");
-	printf("Michel Dubois -- visAES3d -- (c) 2013\n\n");
+	printf("Michel Dubois -- visCipher3d -- (c) 2013\n\n");
 	couleur("0");
-	printf("Syntaxe: visAES3d <filename> <background color> <color type>\n");
+	printf("Syntaxe: visCipher3d <filename> <background color> <color type>\n");
 	printf("\t<filename> -> file where the results of the AES datas be stored\n");
 	printf("\t<background color> -> 'white' or 'black'\n");
 	printf("\t<color type> -> 'mono' or 'multi'\n");
@@ -116,6 +117,7 @@ void takeScreenshot(char *filename) {
 
 void drawPoint(point p) {
 	glPointSize(1.0);
+	glColor3f(p.r, p.g, p.b);
 	glBegin(GL_POINTS);
 	glNormal3f(p.x, p.y, p.z);
 	glVertex3f(p.x, p.y, p.z);
@@ -123,9 +125,22 @@ void drawPoint(point p) {
 }
 
 
-void drawSphere(point c) {
-	glTranslatef(c.x, c.y, c.z);
-	glutSolidSphere(0.2, 4, 4);
+void drawSphere(point p) {
+	glColor3f(p.r, p.g, p.b);
+	glTranslatef(p.x, p.y, p.z);
+	glutSolidSphere(sphereRadius, 8, 8);
+}
+
+
+void drawSquare(point p) {
+	glColor3f(p.r, p.g, p.b);
+	glTranslatef(p.x, p.y, p.z);
+	glBegin(GL_QUADS);
+	glVertex3f(-squareWidth, -squareWidth, 0.0); // Bottom left corner
+	glVertex3f(-squareWidth, squareWidth, 0.0); // Top left corner
+	glVertex3f(squareWidth, squareWidth, 0.0); // Top right corner
+	glVertex3f(squareWidth, -squareWidth, 0.0); // Bottom right corner
+	glEnd();
 }
 
 
@@ -160,7 +175,7 @@ void drawString(float x, float y, float z, char *text) {
 
 void drawText(void) {
 	char text1[90], text2[90], text3[90], text4[90];
-	sprintf(text1, "Michel Dubois (c) 2014, dt: %1.3f, FPS: %4.2f, Nbr elts: %ld", (dt/1000.0), fps, sampleSize);
+	sprintf(text1, "dt: %1.3f, FPS: %4.2f, Nbr elts: %ld", (dt/1000.0), fps, sampleSize);
 	sprintf(text2, "Min: %s", BN_bn2dec(bn_min));
 	sprintf(text3, "Max: %s", BN_bn2dec(bn_max));
 	sprintf(text4, "Average: %s", BN_bn2dec(bn_average));
@@ -183,7 +198,7 @@ void drawAxes(void) {
 	glLineWidth(1.0);
 	glColor3f(0.8, 0.8, 0.8);
 	glTranslatef(0.0, 0.0, 0.0);
-	glutWireCube(100/2.0);
+	glutWireCube(100.0/2.0);
 	glPopMatrix();
 
 	// origin
@@ -237,30 +252,34 @@ void drawAxes(void) {
 
 
 void drawObject(void) {
-	unsigned long i, cpt=0;
-	if (sampleSize >= seuil) {
-		vertices = calloc((sampleSize*3 + sampleSize*3), sizeof(float));
-		for (i=0; i<sampleSize; i++) {
-			vertices[cpt] = pointsList[i].x;
-			vertices[cpt+1] = pointsList[i].y;
-			vertices[cpt+2] = pointsList[i].z;
-			vertices[cpt+3] = pointsList[i].r;
-			vertices[cpt+4] = pointsList[i].g;
-			vertices[cpt+5] = pointsList[i].b;
-			cpt+=6;
-		}
-	} else {
+	unsigned long i;
+	if (sampleSize <= seuil) {
 		objectList = glGenLists(1);
 		glNewList(objectList, GL_COMPILE_AND_EXECUTE);
 		for (i=0; i<sampleSize; i++) {
 			glPushMatrix();
-//			drawLine(pointsList[i-1], pointsList[i]);
-			glColor3f(pointsList[i].r, pointsList[i].g, pointsList[i].b);
+			//drawLine(pointsList[i-1], pointsList[i]);
 			drawSphere(pointsList[i]);
 			glPopMatrix();
 		}
 		glEndList();
 	}
+}
+
+
+void drawHilbert(void) {
+	unsigned long i;
+	hilbertList = glGenLists(1);
+	glNewList(hilbertList, GL_COMPILE_AND_EXECUTE);
+	for (i=0; i<hilbertSize; i++) {
+		glPushMatrix();
+		drawSquare(hilbertPointList[i]);
+		//drawLine(hilbertPointList[i], hilbertPointList[i+1]);
+		//drawSphere(hilbertPointList[i]);
+		//drawPoint(hilbertPointList[i]);
+		glPopMatrix();
+	}
+	glEndList();
 }
 
 
@@ -377,6 +396,10 @@ void onKeyboard(unsigned char key, int x, int y) {
 				printf("INFO: fullscreen %d\n", fullScreen);
 			}
 			break;
+		case 'h':
+			displayHilbert = !displayHilbert;
+			printf("INFO: display Hilbert graph %d\n", displayHilbert);
+			break;
 		case 'r':
 			rotate = !rotate;
 			printf("INFO: rotate %d\n", rotate);
@@ -432,6 +455,10 @@ void display(void) {
 
 	drawText();
 	glCallList(textList);
+//	if (displayHilbert) {
+//		drawHilbert();
+//		glCallList(hilbertList);
+//	}
 
 	glPushMatrix();
 	glTranslatef(xx, yy, -zoom);
@@ -439,11 +466,21 @@ void display(void) {
 	glRotatef(roty, 0.0, 1.0, 0.0);
 	glRotatef(rotz, 0.0, 0.0, 1.0);
 	drawAxes();
+	if (displayHilbert) {
+		glEnableClientState(GL_VERTEX_ARRAY);
+		glEnableClientState(GL_COLOR_ARRAY);
+		glVertexPointer(3, GL_FLOAT, sizeof(point), hilbertPointList);
+		glColorPointer(3, GL_FLOAT, sizeof(point), &hilbertPointList[0].r);
+		glDrawArrays(GL_POINTS, 0, hilbertSize);
+		glDrawArrays(GL_LINE_STRIP, 0, hilbertSize);
+		glDisableClientState(GL_COLOR_ARRAY);
+		glDisableClientState(GL_VERTEX_ARRAY);
+	}
 	if (sampleSize >= seuil) {
 		glEnableClientState(GL_VERTEX_ARRAY);
 		glEnableClientState(GL_COLOR_ARRAY);
-		glVertexPointer(3, GL_FLOAT, (3+3)*sizeof(vertices[0]), vertices);
-		glColorPointer(3, GL_FLOAT, (3+3)*sizeof(vertices[0]), &vertices[3]);
+		glVertexPointer(3, GL_FLOAT, sizeof(point), pointsList);
+		glColorPointer(3, GL_FLOAT, sizeof(point), &pointsList[0].r);
 		glDrawArrays(GL_POINTS, 0, sampleSize);
 		glDisableClientState(GL_COLOR_ARRAY);
 		glDisableClientState(GL_VERTEX_ARRAY);
@@ -499,7 +536,7 @@ void init(void) {
 void glmain(int argc, char *argv[]) {
 	glutInit(&argc, argv);
 	glutInitWindowSize(winSizeW, winSizeH);
-	glutInitWindowPosition(100, 100);
+	glutInitWindowPosition(120, 10);
 	glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH);
 	glutCreateWindow(WINDOW_TITLE_PREFIX);
 	init();
@@ -518,7 +555,7 @@ void glmain(int argc, char *argv[]) {
 }
 
 
-void hsv2rgb(double h, double s, double v, double *r, double *g, double *b) {
+void hsv2rgb(double h, double s, double v, GLfloat *r, GLfloat *g, GLfloat *b) {
 	double hp = h * 6;
 	if ( hp == 6 ) hp = 0;
 	int i = floor(hp);
@@ -534,19 +571,53 @@ void hsv2rgb(double h, double s, double v, double *r, double *g, double *b) {
 }
 
 
-double toDouble(char *val) {
-	unsigned long long int m = 1;
-	double result = 0.0;
-	int i;
-	for (i=strlen(val)-1; i>=0; i--) {
-		if (val[i]!='-') {
-			result += ((val[i]-48) * m);
-			m *= 10;
-		} else {
-			result *= -1;
-		}
+double toDouble(BIGNUM *bn_val) {
+	BIGNUM *bn_rem = BN_new();
+	BIGNUM *bn_modulo = BN_new();
+	BN_CTX *ctx = BN_CTX_new();
+	char *strVal = NULL;
+
+	BN_set_word(bn_modulo, pow(2, 48));
+	BN_mod(bn_rem, bn_val, bn_modulo, ctx);
+	strVal = BN_bn2dec(bn_rem);
+	BN_clear_free(bn_rem);
+	BN_clear_free(bn_modulo);
+	BN_CTX_free(ctx);
+	return(atof(strVal));
+}
+
+
+void hilbert(double x, double y, double z, float xi, float xj, float yi, float yj, int n) {
+	// src: http://www.fundza.com/algorithmic/space_filling/hilbert/basics/index.html
+	// x and y are the coordinates of the bottom left corner
+	// (xi, yi) & (xj, yj) are the i & j components of the unit x & y vectors of the frame
+
+	static unsigned long i = 0;
+	if (n <= 0) {
+		hilbertPointList[i].x = x + (xi + yi)/2;
+		hilbertPointList[i].y = z;
+		hilbertPointList[i].z = y + (xj + yj)/2;
+		i += 1;
+	} else {
+		hilbert(x,				y,				z, yi/2,	yj/2,	xi/2,	xj/2,	n-1);
+		hilbert(x+xi/2,			y+xj/2,			z, xi/2,	xj/2,	yi/2,	yj/2,	n-1);
+		hilbert(x+xi/2+yi/2,	y+xj/2+yj/2,	z, xi/2,	xj/2,	yi/2,	yj/2,	n-1);
+		hilbert(x+xi/2+yi,		y+xj/2+yj,		z, -yi/2,	-yj/2,	-xi/2,	-xj/2,	n-1);
 	}
-	return(result);
+}
+
+
+int determineHilbertOrder(void) {
+	int order = 0, n = 0;
+	do {
+		if ((sampleSize <= pow(4,n+1)) & (sampleSize > pow(4,n))) {
+			order = n+1;
+			break;
+		} else {
+			n += 1;
+		}
+	} while(n <= 8);
+	return(order);
 }
 
 
@@ -570,8 +641,8 @@ void populatePoints(BIGNUM *tab[]) {
 	BN_copy(bn_min, tab[0]);
 
 	if (pointsList == NULL) {
-		printf("### ERROR\n");
-		return;
+		printf("### ERROR pointsList\n");
+		exit(EXIT_FAILURE);
 	}
 
 	if (mono) { hue = (double)rand() / (double)(RAND_MAX - 1); }
@@ -588,14 +659,9 @@ void populatePoints(BIGNUM *tab[]) {
 			BN_sub(bn_x, tab[i-2], tab[i-3]);
 			BN_sub(bn_y, tab[i-1], tab[i-2]);
 			BN_sub(bn_z, tab[i], tab[i-1]);
-			if (BN_num_bits(bn_x) > 64) { // We have 128 bits blocs
-				BN_rshift(bn_x, bn_x, 64); // bn_x = bn_x / 2^64
-				BN_rshift(bn_y, bn_y, 64);
-				BN_rshift(bn_z, bn_z, 64);
-			}
-			pointsList[i].x = toDouble(BN_bn2dec(bn_x));
-			pointsList[i].y = toDouble(BN_bn2dec(bn_y));
-			pointsList[i].z = toDouble(BN_bn2dec(bn_z));
+			pointsList[i].x = toDouble(bn_x);
+			pointsList[i].y = toDouble(bn_y);
+			pointsList[i].z = toDouble(bn_z);
 			if (maxAll < pointsList[i].x) maxAll = pointsList[i].x;
 			if (BN_cmp(bn_max, tab[i]) < 0) BN_copy(bn_max, tab[i]);
 			if (BN_cmp(bn_min, tab[i]) > 0) BN_copy(bn_min, tab[i]);
@@ -620,6 +686,36 @@ void populatePoints(BIGNUM *tab[]) {
 }
 
 
+void populateHilbert(BIGNUM *tab[]) {
+	unsigned long i;
+	double hue = 0.0, x0 = 9.0, y0 = -25.0, z0 = -25.0, current = 0, max = 0;
+	int order = 0;
+	BIGNUM *bn_current = BN_new();
+	order = determineHilbertOrder();
+	hilbertSize = pow(4,order);
+	hilbertPointList = (point*)calloc(hilbertSize, sizeof(point));
+	if (hilbertPointList == NULL) {
+		printf("### ERROR hilbertPointList\n");
+		exit(EXIT_FAILURE);
+	}
+	hilbert(x0, y0, z0, order*2.0, 0.0, 0.0, order*2.0, order);
+	printf("INFO: hilbert order %d (%lu points)\n", order, hilbertSize);
+	max = toDouble(bn_max);
+	for (i=0; i<hilbertSize; i++) {
+		if (i<sampleSize) {
+			BN_copy(bn_current, tab[i]);
+			current = toDouble(bn_current);
+			hue = current / max;
+			hsv2rgb(hue, 0.8, 1.0, &(hilbertPointList[i].r), &(hilbertPointList[i].g), &(hilbertPointList[i].b));
+		} else {
+			hsv2rgb(1.0, 0.0, 1.0, &(hilbertPointList[i].r), &(hilbertPointList[i].g), &(hilbertPointList[i].b));
+		}
+		//printf("%ld\t%15.15f, %15.15f, %15.15f\t%1.15f, %1.15f, %1.15f\n", i, hilbertPointList[i].x, hilbertPointList[i].y, hilbertPointList[i].z, hilbertPointList[i].r, hilbertPointList[i].g, hilbertPointList[i].b);
+	}
+	BN_clear_free(bn_current);
+}
+
+
 long countFileLines(char *name) {
 	long count = 0;
 	char ch='\0';
@@ -631,7 +727,7 @@ long countFileLines(char *name) {
 		}
 		fclose(fic);
 	} else {
-		printf("INFO: open error\n");
+		printf("### ERROR open file error\n");
 		exit(EXIT_FAILURE);
 	}
 	return count;
@@ -640,27 +736,30 @@ long countFileLines(char *name) {
 
 void playFile(int argc, char *argv[]) {
 	unsigned long i=0;
-	BIGNUM *randList[sampleSize];
+	//BIGNUM *randList[sampleSize];
 	FILE *fic = fopen(argv[1], "r");
 	char *line = NULL;
 	size_t linecap = 0;
 	ssize_t linelen;
 
+	
+	printf("%s %d\n", argv[0], argc);
 	if (fic != NULL) {
 		printf("INFO: file open\n");
 		while ((linelen = getline(&line, &linecap, fic)) > 0) {
 			line[strlen(line)-1]='\0';
 			randList[i] = BN_new();
 			BN_hex2bn(&randList[i], line);
-			//if (sampleSize < 1000) { printf("%lu -> %s\n", i, BN_bn2hex(randList[i])); }
+			if (sampleSize < 100) { printf("%lu -> %s\n", i, BN_bn2hex(randList[i])); }
 			i++;
 		}
 		fclose(fic);
 		printf("INFO: file close\n");
 		populatePoints(randList);
+		populateHilbert(randList);
 		glmain(argc, argv);
 	} else {
-		printf("INFO: open error\n");
+		printf("### ERROR open file error\n");
 		exit(EXIT_FAILURE);
 	}
 }
@@ -676,14 +775,20 @@ int main(int argc, char *argv[]) {
 				mono = 1;
 			}
 			sampleSize = countFileLines(argv[1]);
-			playFile(argc, argv);
-			exit(EXIT_SUCCESS);
+			randListSize = sizeof(randList) / sizeof(randList[0]);
+			if (sampleSize <= randListSize) {
+				playFile(argc, argv);
+				exit(EXIT_SUCCESS);
+			} else {
+				printf("INFO: Size exceeded\n");
+				exit(EXIT_FAILURE);
+			}
 			break;
 		default:
 			usage();
 			exit(EXIT_FAILURE);
 			break;	
-		}
+	}
 }
 
 

@@ -1,4 +1,4 @@
-/*visAEScmp3d
+/*visCipherCmp3d
 Copyright (C) 2013 Michel Dubois
 
 This program is free software; you can redistribute it and/or modify
@@ -15,9 +15,6 @@ You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301, USA.*/
 
-// inspired from http://lcamtuf.coredump.cx/oldtcp/tcpseq.html
-// http://www.mpipks-dresden.mpg.de/~tisean/TISEAN_2.1/docs/chaospaper/node6.html
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -30,11 +27,11 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301, USA.*/
 #include <GL/glu.h>
 #include <GL/glut.h>
 
-#define WINDOW_TITLE_PREFIX "visAES3d"
+#define WINDOW_TITLE_PREFIX "visCipherCmp3d"
 #define couleur(param) printf("\033[%sm",param)
 
-static short winSizeW = 800,
-	winSizeH = 600,
+static short winSizeW = 920,
+	winSizeH = 690,
 	frame = 0,
 	currentTime = 0,
 	timebase = 0,
@@ -55,35 +52,31 @@ static float fps = 0.0,
 	yy = 5.0,
 	zoom = 100.0,
 	prevx = 0.0,
-	prevy = 0.0;
+	prevy = 0.0,
+	sphereRadius = 0.6,
+	squareWidth = 0.055;
 
 static BIGNUM *bn_sum, *bn_average, *bn_max, *bn_min;
 
 typedef struct _point {
-	double x;
-	double y;
-	double z;
-	double r;
-	double g;
-	double b;
+	GLfloat x, y, z;
+	GLfloat r, g, b;
 } point;
 
 
 static point *pointsList = NULL;
 
 static unsigned long sampleSize = 0,
-	seuil = 70000;
-
-static float *vertices = NULL;
+	seuil = 60000;
 
 double maxAll = 0.0;
 
 
 void usage(void) {
 	couleur("31");
-	printf("Michel Dubois -- visAEScmp3d -- (c) 2013\n\n");
+	printf("Michel Dubois -- visCipherCmp3d -- (c) 2013\n\n");
 	couleur("0");
-	printf("Syntaxe: visAEScmp3d <filename1> <filename2> <background color>\n");
+	printf("Syntaxe: visCipherCmp3d <filename1> <filename2> <background color>\n");
 	printf("\t<filename1> -> file where the first sequence of the AES datas be stored\n");
 	printf("\t<filename2> -> file where the second sequence of the AES datas be stored\n");
 	printf("\t\t Both sequences must have the same length.\n");
@@ -117,6 +110,7 @@ void takeScreenshot(char *filename) {
 
 void drawPoint(point p) {
 	glPointSize(1.0);
+	glColor3f(p.r, p.g, p.b);
 	glBegin(GL_POINTS);
 	glNormal3f(p.x, p.y, p.z);
 	glVertex3f(p.x, p.y, p.z);
@@ -124,55 +118,22 @@ void drawPoint(point p) {
 }
 
 
-void drawVertexSphere(point c) {
-	double theta=0.0, phi=0.0, radius=0.4;
-	double pas = M_PI/8.0;
-	point p1, p2;
-	glLineWidth(1.0);
-	glBegin(GL_LINES);
-	glColor3f(c.r, c.g, c.b);
-	while (theta < 2*M_PI) {
-		p1.x = c.x + (radius * cos(theta) * sin(phi)),
-		p1.y = c.y + (radius * sin(theta) * sin(phi)),
-		p1.z = c.z + (radius * cos(phi));
-		theta += pas;
-		while (phi < M_PI) {
-			phi += pas;
-			p2.x = c.x + (radius * cos(theta) * sin(phi)),
-			p2.y = c.y + (radius * sin(theta) * sin(phi)),
-			p2.z = c.z + (radius * cos(phi));
-			glVertex3f(p1.x, p1.y, p1.z);
-			glVertex3f(p2.x, p2.y, p2.z);
-			p1.x=p2.x; p1.y=p2.y; p1.z=p2.z;
-		}
-		phi = 0.0;
-	}
-	theta = 0.0;
-	while (phi < M_PI) {
-		p1.x = c.x + (radius * cos(theta) * sin(phi)),
-		p1.y = c.y + (radius * sin(theta) * sin(phi)),
-		p1.z = c.z + (radius * cos(phi));
-		phi += pas;
-		while (theta < 2*M_PI) {
-			theta += pas;
-			p2.x = c.x + (radius * cos(theta) * sin(phi)),
-			p2.y = c.y + (radius * sin(theta) * sin(phi)),
-			p2.z = c.z + (radius * cos(phi));
-			glVertex3f(p1.x, p1.y, p1.z);
-			glVertex3f(p2.x, p2.y, p2.z);
-			p1.x=p2.x; p1.y=p2.y; p1.z=p2.z;
-		}
-		theta = 0.0;
-	}
-	phi = 0.0;
-	glEnd();
+void drawSphere(point p) {
+	glColor3f(p.r, p.g, p.b);
+	glTranslatef(p.x, p.y, p.z);
+	glutSolidSphere(sphereRadius, 8, 8);
 }
 
 
-void drawSphere(point c) {
-	glColor3f(c.r, c.g, c.b);
-	glTranslatef(c.x, c.y, c.z);
-	glutSolidSphere(0.5, 12, 12);
+void drawSquare(point p) {
+	glColor3f(p.r, p.g, p.b);
+	glTranslatef(p.x, p.y, p.z);
+	glBegin(GL_QUADS);
+	glVertex3f(-squareWidth, -squareWidth, 0.0); // Bottom left corner
+	glVertex3f(-squareWidth, squareWidth, 0.0); // Top left corner
+	glVertex3f(squareWidth, squareWidth, 0.0); // Top right corner
+	glVertex3f(squareWidth, -squareWidth, 0.0); // Bottom right corner
+	glEnd();
 }
 
 
@@ -207,7 +168,7 @@ void drawString(float x, float y, float z, char *text) {
 
 void drawText(void) {
 	char text1[90], text2[90], text3[90], text4[90];
-	sprintf(text1, "Michel Dubois (c) 2014, dt: %1.3f, FPS: %4.2f, Nbr elts: %ld", (dt/1000.0), fps, sampleSize*2);
+	sprintf(text1, "dt: %1.3f, FPS: %4.2f, Nbr elts: %ld", (dt/1000.0), fps, sampleSize*2);
 	sprintf(text2, "Min: %s", BN_bn2dec(bn_min));
 	sprintf(text3, "Max: %s", BN_bn2dec(bn_max));
 	sprintf(text4, "Average: %s", BN_bn2dec(bn_average));
@@ -230,7 +191,7 @@ void drawAxes(void) {
 	glLineWidth(1.0);
 	glColor3f(0.8, 0.8, 0.8);
 	glTranslatef(0.0, 0.0, 0.0);
-	glutWireCube(100/2.0);
+	glutWireCube(100.0/2.0);
 	glPopMatrix();
 
 	// origin
@@ -284,19 +245,8 @@ void drawAxes(void) {
 
 
 void drawObject(void) {
-	unsigned long i, cpt=0;
-	if (sampleSize*2 >= seuil) {
-		vertices = calloc((sampleSize*2*3 + sampleSize*2*3), sizeof(float));
-		for (i=0; i<sampleSize*2; i++) {
-			vertices[cpt] = pointsList[i].x;
-			vertices[cpt+1] = pointsList[i].y;
-			vertices[cpt+2] = pointsList[i].z;
-			vertices[cpt+3] = pointsList[i].r;
-			vertices[cpt+4] = pointsList[i].g;
-			vertices[cpt+5] = pointsList[i].b;
-			cpt+=6;
-		}
-	} else {
+	unsigned long i;
+	if (sampleSize*2 <= seuil) {
 		objectList = glGenLists(1);
 		glNewList(objectList, GL_COMPILE_AND_EXECUTE);
 		for (i=0; i<sampleSize*2; i++) {
@@ -488,8 +438,8 @@ void display(void) {
 	if (sampleSize >= seuil) {
 		glEnableClientState(GL_VERTEX_ARRAY);
 		glEnableClientState(GL_COLOR_ARRAY);
-		glVertexPointer(3, GL_FLOAT, 2*(3+3)*sizeof(vertices[0]), vertices);
-		glColorPointer(3, GL_FLOAT, 2*(3+3)*sizeof(vertices[0]), &vertices[3]);
+		glVertexPointer(3, GL_FLOAT, 2*sizeof(point), pointsList);
+		glColorPointer(3, GL_FLOAT, 2*sizeof(point), &pointsList[0].r);
 		glDrawArrays(GL_POINTS, 0, sampleSize);
 		glDisableClientState(GL_COLOR_ARRAY);
 		glDisableClientState(GL_VERTEX_ARRAY);
@@ -545,7 +495,7 @@ void init(void) {
 void glmain(int argc, char *argv[]) {
 	glutInit(&argc, argv);
 	glutInitWindowSize(winSizeW, winSizeH);
-	glutInitWindowPosition(100, 100);
+	glutInitWindowPosition(120, 10);
 	glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH);
 	glutCreateWindow(WINDOW_TITLE_PREFIX);
 	init();
@@ -564,7 +514,7 @@ void glmain(int argc, char *argv[]) {
 }
 
 
-void hsv2rgb(double h, double s, double v, double *r, double *g, double *b) {
+void hsv2rgb(double h, double s, double v, GLfloat *r, GLfloat *g, GLfloat *b) {
 	double hp = h * 6;
 	if ( hp == 6 ) hp = 0;
 	int i = floor(hp);
@@ -580,18 +530,29 @@ void hsv2rgb(double h, double s, double v, double *r, double *g, double *b) {
 }
 
 
-double toDouble(char *val) {
+double toDouble(BIGNUM *bn_val) {
+	BIGNUM *bn_rem = BN_new();
+	BIGNUM *bn_modulo = BN_new();
+	BN_CTX *ctx = BN_CTX_new();
 	unsigned long long int m = 1;
 	double result = 0.0;
 	int i;
-	for (i=strlen(val)-1; i>=0; i--) {
-		if (val[i]!='-') {
-			result += ((val[i]-48) * m);
+	char *strVal = NULL;
+
+	BN_set_word(bn_modulo, pow(2, 16));
+	BN_mod(bn_rem, bn_val, bn_modulo, ctx);
+	strVal = BN_bn2dec(bn_rem);
+	for (i=strlen(strVal)-1; i>=0; i--) {
+		if (strVal[i]!='-') {
+			result += ((strVal[i]-48) * m);
 			m *= 10;
 		} else {
 			result *= -1;
 		}
 	}
+	BN_clear_free(bn_rem);
+	BN_clear_free(bn_modulo);
+	BN_CTX_free(ctx);
 	return(result);
 }
 
@@ -626,8 +587,8 @@ void populatePoints(BIGNUM *tab[]) {
 	if (fic != NULL) { printf("INFO: file create\n"); }
 
 	if (pointsList == NULL) {
-		printf("### ERROR\n");
-		return;
+		printf("### ERROR pointsList\n");
+		exit(EXIT_FAILURE);
 	}
 
 	for (i=0; i<sampleSize*2; i++) {
@@ -643,9 +604,9 @@ void populatePoints(BIGNUM *tab[]) {
 				BN_rshift(bn_y, bn_y, 64);
 				BN_rshift(bn_z, bn_z, 64);
 			}
-			pointsList[i].x = toDouble(BN_bn2dec(bn_x));
-			pointsList[i].y = toDouble(BN_bn2dec(bn_y));
-			pointsList[i].z = toDouble(BN_bn2dec(bn_z));
+			pointsList[i].x = toDouble(bn_x);
+			pointsList[i].y = toDouble(bn_y);
+			pointsList[i].z = toDouble(bn_z);
 			if ((fic != NULL) & (i>=sampleSize)) {
 				fprintf(fic, "%lf\n", minkowskiDistance(2.0, pointsList[i-sampleSize], pointsList[i]));
 			}
@@ -689,7 +650,7 @@ unsigned long countFileLines(char *name) {
 		}
 		fclose(fic);
 	} else {
-		printf("INFO: open error\n");
+		printf("### ERROR open file error\n");
 		exit(EXIT_FAILURE);
 	}
 	return count;
@@ -751,7 +712,7 @@ int main(int argc, char *argv[]) {
 			usage();
 			exit(EXIT_FAILURE);
 			break;	
-		}
+	}
 }
 
 
