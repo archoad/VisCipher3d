@@ -29,14 +29,16 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301, USA.*/
 #include <openssl/buffer.h>
 #include <openssl/md5.h>
 #include <openssl/md4.h>
+#include <openssl/sha.h>
 
 #define couleur(param) printf("\033[%sm",param)
 
 
 static unsigned long iterations;
 
-
 static int algo = 0;
+
+static int clearSizeInByte = 0, keySizeInByte = 0, cipherSizeInByte = 0;
 
 
 void usage(void) {
@@ -45,36 +47,38 @@ void usage(void) {
 	couleur("0");
 	printf("Syntaxe: cipher <num> <algo>\n");
 	printf("\t<num> -> sample size\n");
-	printf("\t<algo> -> 'aes', 'blowfish', '3des', 'des', 'rc4', 'md4', 'md5' or 'base64'\n");
+	printf("\t<algo> -> 'aes', 'blowfish', '3des', 'des', 'rc4', 'md4', 'md5', 'sha1', 'sha256' or 'base64'\n");
 }
 
 
-unsigned char *putToNbytesBlock(unsigned char *block, int size, int n) {
-	int i;
-	unsigned char *result = calloc(n, (sizeof(unsigned char)));
-	for (i=0; i<size; i++) {
-		result[i+(n-size)] = block[i];
-	}
-	return result;
-}
-
-
-BIGNUM* generateNBitsBlock(BIGNUM *block, int n) {
+unsigned char assignByte(char num[8]) {
 	int i = 0;
-	for (i=0; i<n; i++) {
-		BN_clear_bit(block, i);
+	unsigned char result = 0;
+	for (i=0; i<8; ++i) {
+		result |= (num[i] == '1') << (7 - i);
 	}
-	return(block);
+	return(result);
 }
 
 
-char *blockToString(unsigned char *block, int bitsSize) {
+void integerToByte(unsigned int val, char bits[8]) {
+	int i=0;
+	for (i=7; i>=0; i--) {
+		if ((val >> i) & 1) {
+			bits[7-i] = '1';
+		} else {
+			bits[7-i] = '0';
+		}
+	}
+}
+
+
+char *blockToHex(unsigned char *block, int bytesSize) {
 	int i, j;
-	int numberOfBytes = bitsSize/8;
-	char *result = calloc((numberOfBytes*2)+1, sizeof(char));
-	result[numberOfBytes*2] = '\0';
+	char *result = calloc((bytesSize*2)+1, sizeof(char));
+	result[bytesSize*2] = '\0';
 	j = 0;
-	for (i=0; i<numberOfBytes; i++) {
+	for (i=0; i<bytesSize; i++) {
 		sprintf(&result[j], "%x", (block[i] & 0xf0)>>4);
 		sprintf(&result[j+1], "%x", (block[i] & 0x0f));
 		j+=2;
@@ -83,107 +87,132 @@ char *blockToString(unsigned char *block, int bitsSize) {
 }
 
 
-unsigned char *MD4Hash(unsigned char *text, unsigned long cpt) {
-	unsigned char *digest = calloc(MD4_DIGEST_LENGTH, (sizeof(unsigned char)));
-	MD4(text, 16, digest);
-	printf("%lu\ttext: %s,\tMD4 digest: %s\n", cpt, blockToString(text, 128), blockToString(digest, 128));
-	return(digest);
+unsigned char* generateNBytesBlock(unsigned int iteration, int bytesSize) {
+	char bits[8] = "00000000";
+	unsigned char *block = calloc(bytesSize, (sizeof(block)));
+	if (iteration < 256) {
+		integerToByte(iteration, bits);
+		block[bytesSize-1] = assignByte(bits);
+	}
+	if ((iteration >= 256) && (iteration < 65536)) {
+		integerToByte(iteration, bits);
+		block[bytesSize-1] = assignByte(bits);
+		integerToByte(iteration>>8, bits);
+		block[bytesSize-2] = assignByte(bits);
+	}
+	if ((iteration >= 65536) && (iteration < 16777216)) {
+		integerToByte(iteration, bits);
+		block[bytesSize-1] = assignByte(bits);
+		integerToByte(iteration>>8, bits);
+		block[bytesSize-2] = assignByte(bits);
+		integerToByte(iteration>>16, bits);
+		block[bytesSize-3] = assignByte(bits);
+	}
+	if ((iteration >= 16777216) && (iteration < 4294967295)) {
+		integerToByte(iteration, bits);
+		block[bytesSize-1] = assignByte(bits);
+		integerToByte(iteration>>8, bits);
+		block[bytesSize-2] = assignByte(bits);
+		integerToByte(iteration>>16, bits);
+		block[bytesSize-3] = assignByte(bits);
+		integerToByte(iteration>>24, bits);
+		block[bytesSize-4] = assignByte(bits);
+	}
+	return(block);
 }
 
 
-unsigned char *MD5Hash(unsigned char *text, unsigned long cpt) {
-	unsigned char *digest = calloc(MD5_DIGEST_LENGTH, (sizeof(unsigned char)));
-	MD5(text, 16, digest);
-	printf("%lu\ttext: %s,\tMD5 digest: %s\n", cpt, blockToString(text, 128), blockToString(digest, 128));
-	return(digest);
-}
-
-
-unsigned char *AESencrypt(unsigned char *clear, unsigned long cpt) {
-	unsigned char key[16];
-	unsigned char *cipher = calloc(16, (sizeof(unsigned char)));
+unsigned char *AESencrypt(unsigned char *clear, unsigned int cpt) {
+	unsigned char key[keySizeInByte];
+	unsigned char *cipher = calloc(cipherSizeInByte, (sizeof(unsigned char)));
 	AES_KEY expandKey;
 	int i = 0;
-	key[0]=0b10000000; for (i=1; i<16; i++) { key[i] = 0; }
-	AES_set_encrypt_key(key, 128, &expandKey);
+	key[0] = assignByte("00000001");
+	for (i=1; i<keySizeInByte; i++) { key[i] = assignByte("00000000"); }
+	AES_set_encrypt_key(key, keySizeInByte*8, &expandKey);
 	AES_encrypt(clear, cipher, &expandKey);
-	printf("%lu\tclear: %s,\tkey: %s,\tcipher: %s\n", cpt, blockToString(clear, 128), blockToString(key, 128), blockToString(cipher, 128));
+	printf("%d\tclear: %s,\tkey: %s,\tcipher: %s\n", cpt, blockToHex(clear, clearSizeInByte), blockToHex(key, keySizeInByte), blockToHex(cipher, cipherSizeInByte));
 	return(cipher);
 }
 
 
-unsigned char *BlowfishEncrypt(unsigned char *clear, unsigned long cpt) {
-	unsigned char key[16];
-	unsigned char *cipher =  calloc(8, (sizeof(unsigned char)));
+unsigned char *BlowfishEncrypt(unsigned char *clear, unsigned int cpt) {
+	unsigned char key[keySizeInByte];
+	unsigned char *cipher =  calloc(cipherSizeInByte, (sizeof(unsigned char)));
 	BF_KEY expandKey;
 	int i = 0;
-	key[0]=0b10000000; for (i=1; i<16; i++) { key[i] = 0; }
-	BF_set_key(&expandKey, 16, key); //128 bits key
+	key[0] = assignByte("00000001");
+	for (i=1; i<keySizeInByte; i++) { key[i] = assignByte("00000000"); }
+	BF_set_key(&expandKey, keySizeInByte, key); //128 bits key
 	BF_ecb_encrypt(clear, cipher, &expandKey, BF_ENCRYPT);
-	printf("%lu\tclear: %s,\tkey: %s,\tcipher: %s\n", cpt, blockToString(clear, 64), blockToString(key, 128), blockToString(cipher, 64));
+	printf("%d\tclear: %s,\tkey: %s,\tcipher: %s\n", cpt, blockToHex(clear, clearSizeInByte), blockToHex(key, keySizeInByte), blockToHex(cipher, cipherSizeInByte));
 	return(cipher);
 }
 
 
-unsigned char *DESencrypt(unsigned char *clear, unsigned long cpt) {
-	unsigned char key[8];
-	unsigned char *cipher =  calloc(8, (sizeof(unsigned char)));
+unsigned char *DESencrypt(unsigned char *clear, unsigned int cpt) {
+	unsigned char key[keySizeInByte];
+	unsigned char *cipher =  calloc(cipherSizeInByte, (sizeof(unsigned char)));
 	DES_cblock clear_des;
 	DES_cblock cipher_des;
 	int i = 0;
-	memcpy(clear_des, clear, 8);
+	memcpy(clear_des, clear, clearSizeInByte);
 	DES_key_schedule expandKey;
-	key[0]=0b10000000; for (i=1; i<8; i++) { key[i] = 0; }
+	key[0] = assignByte("00000001");
+	for (i=1; i<keySizeInByte; i++) { key[i] = assignByte("00000000"); }
 	DES_set_key(&key, &expandKey);
 	DES_ecb_encrypt(&clear_des, &cipher_des, &expandKey, DES_ENCRYPT);
-	memcpy(cipher, cipher_des, 8);
-	printf("%lu\tclear: %s,\tkey: %s,\tcipher: %s\n", cpt, blockToString(clear, 64), blockToString(key, 64), blockToString(cipher, 64));
+	memcpy(cipher, cipher_des, cipherSizeInByte);
+	printf("%d\tclear: %s,\tkey: %s,\tcipher: %s\n", cpt, blockToHex(clear, clearSizeInByte), blockToHex(key, keySizeInByte), blockToHex(cipher, cipherSizeInByte));
 	return(cipher);
 }
 
 
-unsigned char *tripleDESencrypt(unsigned char *clear, unsigned long cpt) {
-	unsigned char key1[8], key2[8], key3[8];
-	unsigned char *cipher =  calloc(8, (sizeof(unsigned char)));
+unsigned char *tripleDESencrypt(unsigned char *clear, unsigned int cpt) {
+	unsigned char key1[keySizeInByte], key2[keySizeInByte], key3[keySizeInByte];
+	unsigned char *cipher =  calloc(cipherSizeInByte, (sizeof(unsigned char)));
 	DES_cblock clear_des;
 	DES_cblock cipher_des;
 	int i = 0;
-	memcpy(clear_des, clear, 8);
+	memcpy(clear_des, clear, clearSizeInByte);
 	DES_key_schedule expandKey1;
 	DES_key_schedule expandKey2;
 	DES_key_schedule expandKey3;
-	key1[0]=0b10000000; for (i=1; i<8; i++) { key1[i] = 0; }
-	for (i=0; i<8; i++) { key2[i] = 0b10101010; }
-	for (i=0; i<8; i++) { key3[i] = 0b11111111; }
+	key1[0] = assignByte("00000001");
+	for (i=1; i<keySizeInByte; i++) { key1[i] = assignByte("00000000"); }
+	key2[0] = assignByte("00000011");
+	for (i=1; i<keySizeInByte; i++) { key2[i] = assignByte("00000000"); }
+	key3[0] = assignByte("00000111");
+	for (i=1; i<keySizeInByte; i++) { key3[i] = assignByte("00000000"); }
 	DES_set_key(&key1, &expandKey1);
 	DES_set_key(&key2, &expandKey2);
 	DES_set_key(&key3, &expandKey3);
 	DES_ecb3_encrypt(&clear_des, &cipher_des, &expandKey1, &expandKey2, &expandKey3, DES_ENCRYPT);
-	memcpy(cipher, cipher_des, 8);
-	printf("%lu\tclear: %s,\tkeys: %s %s %s,\tcipher: %s\n", cpt, blockToString(clear, 64), blockToString(key1, 64), blockToString(key2, 64), blockToString(key3, 64), blockToString(cipher, 64));
+	memcpy(cipher, cipher_des, cipherSizeInByte);
+	printf("%d\tclear: %s,\tkeys: %s %s %s,\tcipher: %s\n", cpt, blockToHex(clear, clearSizeInByte), blockToHex(key1, keySizeInByte), blockToHex(key2, keySizeInByte), blockToHex(key3, keySizeInByte), blockToHex(cipher, cipherSizeInByte));
 	return(cipher);
 }
 
 
-unsigned char *RC4encrypt(unsigned char *clear, unsigned long cpt) {
-	unsigned char key[8];
-	unsigned char *cipher = calloc(16, (sizeof(unsigned char)));
-	unsigned char *decipher = calloc(16, (sizeof(unsigned char)));
+unsigned char *RC4encrypt(unsigned char *clear, unsigned int cpt) {
+	unsigned char key[keySizeInByte];
+	unsigned char *cipher = calloc(cipherSizeInByte, (sizeof(unsigned char)));
+	unsigned char *decipher = calloc(clearSizeInByte, (sizeof(unsigned char)));
 	RC4_KEY rc4_key;
-	unsigned int i = 0;
-	//key[7]=0b00001111; for (i=0; i<7; i++) { key[i] = 0b00001111; }
-	key[7]=0b00000001; for (i=0; i<7; i++) { key[i] = 0b00000001; }
-	RC4_set_key(&rc4_key, 8, key);
-	RC4(&rc4_key, 16, clear, cipher);
+	int i = 0;
+	key[0] = assignByte("00000001");
+	for (i=1; i<keySizeInByte; i++) { key[i] = assignByte("00000000"); }
+	RC4_set_key(&rc4_key, keySizeInByte, key);
+	RC4(&rc4_key, cipherSizeInByte, clear, cipher);
 
-	RC4_set_key(&rc4_key, 8, key);
-	RC4(&rc4_key, 16, cipher, decipher);
-	printf("%lu\tclear: %s, key: %s, cipher: %s, decipher: %s\n", cpt, blockToString(clear, 128), blockToString(key, 64), blockToString(cipher, 128), blockToString(decipher, 128));
+	RC4_set_key(&rc4_key, keySizeInByte, key);
+	RC4(&rc4_key, clearSizeInByte, cipher, decipher);
+	printf("%d\tclear: %s, key: %s, cipher: %s, decipher: %s\n", cpt, blockToHex(clear, clearSizeInByte), blockToHex(key, keySizeInByte), blockToHex(cipher, cipherSizeInByte), blockToHex(decipher, clearSizeInByte));
 	return(cipher);
 }
 
 
-unsigned char *base64encode(unsigned char *clear, unsigned long cpt) {
+unsigned char *base64encode(unsigned char *clear, unsigned int cpt) {
 	BIO *bmem, *b64;
 	BUF_MEM *bptr;
 	unsigned char *cipher = NULL;
@@ -200,71 +229,79 @@ unsigned char *base64encode(unsigned char *clear, unsigned long cpt) {
 	memcpy(cipher, bptr->data, bptr->length-1);
 	cipher[bptr->length-1] = 0;
 
-	printf("%lu\tclear: %s, cipher: %s(%s)\n", cpt, blockToString(clear, 64), cipher, blockToString(cipher, 128));
+	printf("%d\tclear: %s, cipher: %s(%s)\n", cpt, blockToHex(clear, clearSizeInByte), cipher, blockToHex(cipher, keySizeInByte));
 	BIO_free_all(b64);
 	return(cipher);
 }
 
 
+unsigned char *MD4Hash(unsigned char *text, unsigned int cpt) {
+	unsigned char *digest = calloc(MD4_DIGEST_LENGTH, (sizeof(unsigned char)));
+	MD4(text, clearSizeInByte, digest);
+	printf("%d\ttext: %s,\tMD4 digest: %s\n", cpt, blockToHex(text, clearSizeInByte), blockToHex(digest, MD4_DIGEST_LENGTH));
+	return(digest);
+}
+
+
+unsigned char *MD5Hash(unsigned char *text, unsigned int cpt) {
+	unsigned char *digest = calloc(MD5_DIGEST_LENGTH, (sizeof(unsigned char)));
+	MD5(text, clearSizeInByte, digest);
+	printf("%d\ttext: %s,\tMD5 digest: %s\n", cpt, blockToHex(text, clearSizeInByte), blockToHex(digest, MD5_DIGEST_LENGTH));
+	return(digest);
+}
+
+
+unsigned char *SHA1Hash(unsigned char *text, unsigned int cpt) {
+	unsigned char *digest = calloc(SHA_DIGEST_LENGTH, (sizeof(unsigned char)));
+	SHA1(text, clearSizeInByte, digest);
+	printf("%d\ttext: %s,\tSHA1 digest: %s\n", cpt, blockToHex(text, clearSizeInByte), blockToHex(digest, SHA_DIGEST_LENGTH));
+	return(digest);
+}
+
+
+unsigned char *SHA256Hash(unsigned char *text, unsigned int cpt) {
+	unsigned char *digest = calloc(SHA256_DIGEST_LENGTH, (sizeof(unsigned char)));
+	SHA256(text, clearSizeInByte, digest);
+	printf("%d\ttext: %s,\tSHA256 digest: %s\n", cpt, blockToHex(text, clearSizeInByte), blockToHex(digest, SHA256_DIGEST_LENGTH));
+	return(digest);
+}
+
+
 void generateFile(char *a) {
-	int clearSizeInByte = 0, keySizeInByte = 0, modifiedBit = 0;
-	unsigned long i = 0;
+	unsigned int i = 0;
 	unsigned char *cipher = NULL;
 	unsigned char *clear = NULL;
-	BIGNUM *bn_clear = BN_new();
-	BIGNUM *bn_cipher = BN_new();
 	FILE *fic = fopen("result.dat", "w");
 
 	if (fic != NULL) {
 		printf("INFO: file create\n");
-		if ((algo == 1 /*AES*/) | (algo == 5 /*RC4*/) | (algo == 7 /*MD4*/) | (algo == 8 /*MD5*/)) {
-			clearSizeInByte = 16;
-			keySizeInByte = 16;
-			modifiedBit = 100; // must be < 128
-		} else if (algo == 6 /*base64*/) {
-			clearSizeInByte = 8;
-			keySizeInByte = 16;
-			modifiedBit = 50; // must be < 64
-		} else {
-			clearSizeInByte = 8;
-			keySizeInByte = 8;
-			modifiedBit = 50; // must be < 64
-		}
-		generateNBitsBlock(bn_clear, clearSizeInByte*8);
-		BN_set_bit(bn_clear, modifiedBit); 
-		clear = calloc(clearSizeInByte, sizeof(unsigned char));
-		cipher = calloc(keySizeInByte, sizeof(unsigned char));
-		printf("INFO: %s -> clear block size: %d bits\tcipher block size: %d bits\n", a, clearSizeInByte*8, keySizeInByte*8);
+		if (algo == 1 /*AES*/) { clearSizeInByte = 16; keySizeInByte = 16; cipherSizeInByte = 16; }
+		if (algo == 2 /*Blowfish*/) { clearSizeInByte = 8; keySizeInByte = 8; cipherSizeInByte = 8; }
+		if (algo == 3 /*DES*/) { clearSizeInByte = 8; keySizeInByte = 7; cipherSizeInByte = 8; }
+		if (algo == 4 /*3DES*/) { clearSizeInByte = 8; keySizeInByte = 7; cipherSizeInByte = 8; }
+		if (algo == 5 /*RC4*/) { clearSizeInByte = 16; keySizeInByte = 8; cipherSizeInByte = 16; }
+		if (algo == 6 /*base64*/) { clearSizeInByte = 8; keySizeInByte = 16; }
+		if (algo == 7 /*MD4*/) { clearSizeInByte = 16; }
+		if (algo == 8 /*MD5*/) { clearSizeInByte = 16; }
+		if (algo == 9 /*SHA1*/) { clearSizeInByte = 16; }
+		if (algo == 10 /*SHA256*/) { clearSizeInByte = 16; }
+
+		cipher = (unsigned char*)calloc(keySizeInByte, sizeof(unsigned char));
+		printf("INFO: %s -> clear block size: %d bits, cipher block size: %d bits\n", a, clearSizeInByte*8, keySizeInByte*8);
 
 		for (i=1; i<iterations; i++) {
-			BN_add_word(bn_clear, 1); // add 1 to the block value
-			BN_bn2bin(bn_clear, clear);
-			if (algo == 1 /*AES 128*/) {
-				cipher = AESencrypt(putToNbytesBlock(clear, BN_num_bytes(bn_clear), clearSizeInByte), i);
-			}
-			if (algo == 2 /*Blowfish*/) {
-				cipher = BlowfishEncrypt(putToNbytesBlock(clear, BN_num_bytes(bn_clear), clearSizeInByte), i);
-			}
-			if (algo == 3 /*DES*/) {
-				cipher = DESencrypt(putToNbytesBlock(clear, BN_num_bytes(bn_clear), clearSizeInByte), i);
-			}
-			if (algo == 4 /*3DES*/) {
-				cipher = tripleDESencrypt(putToNbytesBlock(clear, BN_num_bytes(bn_clear), clearSizeInByte), i);
-			}
-			if (algo == 5 /*RC4*/) {
-				cipher = RC4encrypt(putToNbytesBlock(clear, BN_num_bytes(bn_clear), clearSizeInByte), i);
-			}
-			if (algo == 6 /*base64*/) {
-				cipher = base64encode(putToNbytesBlock(clear, BN_num_bytes(bn_clear), clearSizeInByte), i);
-			}
-			if (algo == 7 /*MD4*/) {
-				cipher = MD4Hash(putToNbytesBlock(clear, BN_num_bytes(bn_clear), clearSizeInByte), i);
-			}
-			if (algo == 8 /*MD5*/) {
-				cipher = MD5Hash(putToNbytesBlock(clear, BN_num_bytes(bn_clear), clearSizeInByte), i);
-			}
-			bn_cipher = BN_bin2bn(cipher, keySizeInByte, NULL);
-			BN_print_fp(fic, bn_cipher);
+			clear = generateNBytesBlock(i, clearSizeInByte);
+			if (algo == 1 /*AES 128*/) { cipher = AESencrypt(clear, i); }
+			if (algo == 2 /*Blowfish*/) { cipher = BlowfishEncrypt(clear, i); }
+			if (algo == 3 /*DES*/) { cipher = DESencrypt(clear, i); }
+			if (algo == 4 /*3DES*/) { cipher = tripleDESencrypt(clear, i); }
+			if (algo == 5 /*RC4*/) { cipher = RC4encrypt(clear, i); }
+			if (algo == 6 /*base64*/) { cipher = base64encode(clear, i); }
+			if (algo == 7 /*MD4*/) { cipher = MD4Hash(clear, i); }
+			if (algo == 8 /*MD5*/) { cipher = MD5Hash(clear, i); }
+			if (algo == 9 /*SHA1*/) { cipher = SHA1Hash(clear, i); }
+			if (algo == 10 /*SHA256*/) { cipher = SHA256Hash(clear, i); }
+			fprintf(fic, "%s", blockToHex(cipher, keySizeInByte));
 			fprintf(fic, "\n");
 		}
 		fclose(fic);
@@ -273,8 +310,6 @@ void generateFile(char *a) {
 		printf("INFO: open error\n");
 		exit(EXIT_FAILURE);
 	}
-	BN_clear_free(bn_clear);
-	BN_clear_free(bn_cipher);
 	free(clear);
 	free(cipher);
 }
@@ -291,6 +326,8 @@ int main(int argc, char *argv[]) {
 			else if (strncmp(argv[2], "base64", 6) == 0) { algo = 6; }
 			else if (strncmp(argv[2], "md4", 3) == 0) { algo = 7; }
 			else if (strncmp(argv[2], "md5", 3) == 0) { algo = 8; }
+			else if (strncmp(argv[2], "sha1", 4) == 0) { algo = 9; }
+			else if (strncmp(argv[2], "sha256", 6) == 0) { algo = 10; }
 			else {
 				usage();
 				exit(EXIT_FAILURE);
@@ -302,6 +339,6 @@ int main(int argc, char *argv[]) {
 		default:
 			usage();
 			exit(EXIT_FAILURE);
-			break;	
+			break;
 		}
 }

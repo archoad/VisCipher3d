@@ -511,7 +511,7 @@ void init(void) {
 	glEnable(GL_LIGHT0);
 	glEnable(GL_COLOR_MATERIAL);
 	glColorMaterial(GL_FRONT, GL_AMBIENT_AND_DIFFUSE);
-	
+
 	glShadeModel(GL_SMOOTH);
 	glEnable(GL_DEPTH_TEST);
 
@@ -742,7 +742,7 @@ void playFile(int argc, char *argv[]) {
 	size_t linecap = 0;
 	ssize_t linelen;
 
-	
+
 	printf("%s %d\n", argv[0], argc);
 	if (fic != NULL) {
 		printf("INFO: file open\n");
@@ -787,9 +787,6 @@ int main(int argc, char *argv[]) {
 		default:
 			usage();
 			exit(EXIT_FAILURE);
-			break;	
+			break;
 	}
 }
-
-
-
