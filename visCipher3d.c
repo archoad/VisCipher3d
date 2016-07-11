@@ -65,7 +65,7 @@ static BIGNUM *bn_sum, *bn_average, *bn_max, *bn_min;
 static BIGNUM *randList[5000000];
 
 typedef struct _point {
-	GLfloat x, y, z;
+	GLdouble x, y, z;
 	GLfloat r, g, b;
 } point;
 
@@ -469,7 +469,7 @@ void display(void) {
 	if (displayHilbert) {
 		glEnableClientState(GL_VERTEX_ARRAY);
 		glEnableClientState(GL_COLOR_ARRAY);
-		glVertexPointer(3, GL_FLOAT, sizeof(point), hilbertPointList);
+		glVertexPointer(3, GL_DOUBLE, sizeof(point), hilbertPointList);
 		glColorPointer(3, GL_FLOAT, sizeof(point), &hilbertPointList[0].r);
 		glDrawArrays(GL_POINTS, 0, hilbertSize);
 		glDrawArrays(GL_LINE_STRIP, 0, hilbertSize);
@@ -479,7 +479,7 @@ void display(void) {
 	if (sampleSize >= seuil) {
 		glEnableClientState(GL_VERTEX_ARRAY);
 		glEnableClientState(GL_COLOR_ARRAY);
-		glVertexPointer(3, GL_FLOAT, sizeof(point), pointsList);
+		glVertexPointer(3, GL_DOUBLE, sizeof(point), pointsList);
 		glColorPointer(3, GL_FLOAT, sizeof(point), &pointsList[0].r);
 		glDrawArrays(GL_POINTS, 0, sampleSize);
 		glDisableClientState(GL_COLOR_ARRAY);
@@ -575,15 +575,25 @@ double toDouble(BIGNUM *bn_val) {
 	BIGNUM *bn_rem = BN_new();
 	BIGNUM *bn_modulo = BN_new();
 	BN_CTX *ctx = BN_CTX_new();
+	unsigned long long int m = 1;
+	double result = 0.0;
+	int i;
 	char *strVal = NULL;
-
-	BN_set_word(bn_modulo, pow(2, 48));
+	BN_set_word(bn_modulo, pow(2, 52));
 	BN_mod(bn_rem, bn_val, bn_modulo, ctx);
 	strVal = BN_bn2dec(bn_rem);
+	for (i=strlen(strVal)-1; i>=0; i--) {
+		if (strVal[i]!='-') {
+			result += ((strVal[i]-48) * m);
+			m *= 10;
+		} else {
+			result *= -1;
+		}
+	}
 	BN_clear_free(bn_rem);
 	BN_clear_free(bn_modulo);
 	BN_CTX_free(ctx);
-	return(atof(strVal));
+	return(result);
 }
 
 
@@ -633,7 +643,7 @@ void populatePoints(BIGNUM *tab[]) {
 	bn_average = BN_new();
 	bn_max = BN_new();
 	bn_min = BN_new();
-	double hue = 0;
+	double hue = 0.0;
 	pointsList = (point*)calloc(sampleSize, sizeof(point));
 	srand(time(NULL));
 	BN_set_word(bn_size, sampleSize);
@@ -656,9 +666,9 @@ void populatePoints(BIGNUM *tab[]) {
 		hsv2rgb(hue, 1.0, 1.0, &(pointsList[i].r), &(pointsList[i].g), &(pointsList[i].b));
 		BN_add(bn_sum, bn_sum, tab[i]);
 		if (i>=3) {
-			BN_sub(bn_x, tab[i-2], tab[i-3]);
-			BN_sub(bn_y, tab[i-1], tab[i-2]);
-			BN_sub(bn_z, tab[i], tab[i-1]);
+			BN_sub(bn_x, tab[i-3], tab[i-2]);
+			BN_sub(bn_y, tab[i-2], tab[i-1]);
+			BN_sub(bn_z, tab[i-1], tab[i]);
 			pointsList[i].x = toDouble(bn_x);
 			pointsList[i].y = toDouble(bn_y);
 			pointsList[i].z = toDouble(bn_z);
@@ -736,14 +746,11 @@ long countFileLines(char *name) {
 
 void playFile(int argc, char *argv[]) {
 	unsigned long i=0;
-	//BIGNUM *randList[sampleSize];
 	FILE *fic = fopen(argv[1], "r");
 	char *line = NULL;
 	size_t linecap = 0;
 	ssize_t linelen;
 
-
-	printf("%s %d\n", argv[0], argc);
 	if (fic != NULL) {
 		printf("INFO: file open\n");
 		while ((linelen = getline(&line, &linecap, fic)) > 0) {

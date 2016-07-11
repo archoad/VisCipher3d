@@ -24,7 +24,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301, USA.*/
 #define couleur(param) printf("\033[%sm",param)
 
 
-static int clearLen = 4;
+static int blockLen = 4;
 
 
 void usage(void) {
@@ -38,41 +38,39 @@ void usage(void) {
 
 char *vigenereCipher(char *clear, char *key) {
 	int i = 0, keySize = strlen(key);
-	char *cipher = malloc(clearLen * sizeof(char));
+	char *cipher = malloc(blockLen * sizeof(char));
 
-	for (i=0; i<clearLen-1; i++) {
+	for (i=0; i<blockLen; i++) {
 		cipher[i] = 'A' + (clear[i] - 'A' + key[i % keySize] - 'A') % 26;
 	}
-	cipher[clearLen-1] = '\0';
+	cipher[blockLen] = '\0';
 	return(cipher);
 }
 
 
 char *vigenereDeCipher(char *cipher, char *key) {
 	int i = 0, keySize = strlen(key);
-	char *clear = malloc(clearLen * sizeof(char));
+	char *clear = malloc(blockLen * sizeof(char));
 
-	for (i=0; i<clearLen-1; i++) {
+	for (i=0; i<blockLen; i++) {
 		clear[i] = 'A' + (cipher[i] - key[i % keySize] + 26) % 26;
 	}
-	clear[clearLen-1] = '\0';
+	clear[blockLen] = '\0';
 	return(clear);
 }
 
 
-char *blockToDecimal(char *block) {
-	int len = strlen(block);
-	char *result = malloc(len * 2 * sizeof(char));
-	sprintf(result, "%d%d%d%d%d%d%d%d", block[0], block[1], block[2], block[3], block[4], block[5], block[6], block[7]);
-	result[len*2] = '\0';
+char *blockToHex(char *block) {
+	char *result = calloc((blockLen*2)+1, sizeof(char));
+	sprintf(result, "%02x%02x%02x%02x", block[0], block[1], block[2], block[3]);
 	return(result);
 }
 
 
 void generateFile(char *key) {
-	int i, j, k, cpt = 0;
-	char *clear = malloc(clearLen * sizeof(char));
-	char *cipher = malloc(clearLen * sizeof(char));
+	int i, j, k, l, cpt = 0;
+	char *clear = malloc(blockLen * sizeof(char));
+	char *cipher = malloc(blockLen * sizeof(char));
 	FILE *fic = fopen("result.dat", "w");
 
 	if (fic != NULL) {
@@ -80,14 +78,17 @@ void generateFile(char *key) {
 		for (i=0; i<26; i++) {
 			for (j=0; j<26; j++) {
 				for (k=0; k<26; k++) {
-							clear[0] = i + 65;
-							clear[1] = j + 65;
-							clear[2] = k + 65;
-							clear[clearLen] = '\0';
-							cipher = vigenereCipher(clear, key);
-							printf("%d -> %s, %s, %s (%s), %s\n", cpt, clear, key, cipher, blockToDecimal(cipher), vigenereDeCipher(cipher, key));
-							fprintf(fic, "%s\n", blockToDecimal(cipher));
-							cpt ++;
+					for (l=0; l<26; l++) {
+						clear[0] = i + 65;
+						clear[1] = j + 65;
+						clear[2] = k + 65;
+						clear[3] = l + 65;
+						clear[blockLen] = '\0';
+						cipher = vigenereCipher(clear, key);
+						printf("%d -> %s, %s, %s (%s), %s\n", cpt, clear, key, cipher, blockToHex(cipher), vigenereDeCipher(cipher, key));
+						fprintf(fic, "%s\n", blockToHex(cipher));
+						cpt ++;
+					}
 				}
 			}
 		}
@@ -111,6 +112,6 @@ int main(int argc, char *argv[]) {
 		default:
 			usage();
 			exit(EXIT_FAILURE);
-			break;	
+			break;
 		}
 }

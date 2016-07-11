@@ -59,7 +59,7 @@ static float fps = 0.0,
 static BIGNUM *bn_sum, *bn_average, *bn_max, *bn_min;
 
 typedef struct _point {
-	GLfloat x, y, z;
+	GLdouble x, y, z;
 	GLfloat r, g, b;
 } point;
 
@@ -438,7 +438,7 @@ void display(void) {
 	if (sampleSize >= seuil) {
 		glEnableClientState(GL_VERTEX_ARRAY);
 		glEnableClientState(GL_COLOR_ARRAY);
-		glVertexPointer(3, GL_FLOAT, 2*sizeof(point), pointsList);
+		glVertexPointer(3, GL_DOUBLE, 2*sizeof(point), pointsList);
 		glColorPointer(3, GL_FLOAT, 2*sizeof(point), &pointsList[0].r);
 		glDrawArrays(GL_POINTS, 0, sampleSize);
 		glDisableClientState(GL_COLOR_ARRAY);
@@ -470,7 +470,7 @@ void init(void) {
 	glEnable(GL_LIGHT0);
 	glEnable(GL_COLOR_MATERIAL);
 	glColorMaterial(GL_FRONT, GL_AMBIENT_AND_DIFFUSE);
-	
+
 	glShadeModel(GL_SMOOTH);
 	glEnable(GL_DEPTH_TEST);
 
@@ -539,7 +539,7 @@ double toDouble(BIGNUM *bn_val) {
 	int i;
 	char *strVal = NULL;
 
-	BN_set_word(bn_modulo, pow(2, 16));
+	BN_set_word(bn_modulo, pow(2, 52));
 	BN_mod(bn_rem, bn_val, bn_modulo, ctx);
 	strVal = BN_bn2dec(bn_rem);
 	for (i=strlen(strVal)-1; i>=0; i--) {
@@ -596,9 +596,9 @@ void populatePoints(BIGNUM *tab[]) {
 		hsv2rgb(hue, 1.0, 1.0, &(pointsList[i].r), &(pointsList[i].g), &(pointsList[i].b));
 		BN_add(bn_sum, bn_sum, tab[i]);
 		if (i>=3) {
-			BN_sub(bn_x, tab[i-2], tab[i-3]);
-			BN_sub(bn_y, tab[i-1], tab[i-2]);
-			BN_sub(bn_z, tab[i], tab[i-1]);
+			BN_sub(bn_x, tab[i-3], tab[i-2]);
+			BN_sub(bn_y, tab[i-2], tab[i-1]);
+			BN_sub(bn_z, tab[i-1], tab[i]);
 			if (BN_num_bits(bn_x) > 64) { // We have 128 bits blocs
 				BN_rshift(bn_x, bn_x, 64); // bn_x = bn_x / 2^64
 				BN_rshift(bn_y, bn_y, 64);
@@ -711,9 +711,6 @@ int main(int argc, char *argv[]) {
 		default:
 			usage();
 			exit(EXIT_FAILURE);
-			break;	
+			break;
 	}
 }
-
-
-

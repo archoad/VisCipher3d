@@ -281,10 +281,10 @@ void generateFile(char *a) {
 		if (algo == 4 /*3DES*/) { clearSizeInByte = 8; keySizeInByte = 7; cipherSizeInByte = 8; }
 		if (algo == 5 /*RC4*/) { clearSizeInByte = 16; keySizeInByte = 8; cipherSizeInByte = 16; }
 		if (algo == 6 /*base64*/) { clearSizeInByte = 8; keySizeInByte = 16; }
-		if (algo == 7 /*MD4*/) { clearSizeInByte = 16; }
-		if (algo == 8 /*MD5*/) { clearSizeInByte = 16; }
-		if (algo == 9 /*SHA1*/) { clearSizeInByte = 16; }
-		if (algo == 10 /*SHA256*/) { clearSizeInByte = 16; }
+		if (algo == 7 /*MD4*/) { clearSizeInByte = 16; keySizeInByte = MD4_DIGEST_LENGTH; }
+		if (algo == 8 /*MD5*/) { clearSizeInByte = 16; keySizeInByte = MD5_DIGEST_LENGTH; }
+		if (algo == 9 /*SHA1*/) { clearSizeInByte = 16; keySizeInByte = SHA_DIGEST_LENGTH; }
+		if (algo == 10 /*SHA256*/) { clearSizeInByte = 16; keySizeInByte = SHA256_DIGEST_LENGTH; }
 
 		cipher = (unsigned char*)calloc(keySizeInByte, sizeof(unsigned char));
 		printf("INFO: %s -> clear block size: %d bits, cipher block size: %d bits\n", a, clearSizeInByte*8, keySizeInByte*8);
