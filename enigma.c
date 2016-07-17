@@ -47,7 +47,7 @@ typedef struct P {
 	char plug[10];/*="AMTE";*/
 } params;
 
-static int blockLen = 4;
+static int blockLen = 6;
 
 char scramble(char c, params *p) {
 	int i, j, flag = 0;
@@ -178,36 +178,37 @@ void initParams(params *p) {
 
 char *blockToHex(char *block) {
 	char *result = calloc((blockLen*2)+1, sizeof(char));
-	sprintf(result, "%02x%02x%02x%02x", block[0], block[1], block[2], block[3]);
+	sprintf(result, "%02x%02x%02x%02x%02x", block[0], block[1], block[2], block[3], block[4]);
 	return(result);
 }
 
 
-
-
-int main(void) {
+void generateFile() {
 	params p;
-	int i, j, k, l, cpt = 0;
+	int i, j, k, l, m, cpt = 0;
 	char *clear = malloc(blockLen * sizeof(char));
 	char *cipher = malloc(blockLen * sizeof(char));
-	FILE *fic = fopen("result.dat", "w");
 
-	initParams(&p);
+	FILE *fic = fopen("result.dat", "w");
 	if (fic != NULL) {
 		printf("INFO: file create\n");
-		for (i=0; i<26; i++) {
+		initParams(&p);
+		for (i=0; i<5; i++) {
 			for (j=0; j<26; j++) {
 				for (k=0; k<26; k++) {
 					for (l=0; l<26; l++) {
-						clear[0] = i + 65;
-						clear[1] = j + 65;
-						clear[2] = k + 65;
-						clear[3] = l + 65;
-						clear[blockLen] = '\0';
-						cipher = enigma(clear, &p);
-						printf("%d: %s -> %s (%s)\n", cpt, clear, cipher, blockToHex(cipher));
-						fprintf(fic, "%s\n", blockToHex(cipher));
-						cpt ++;
+						for (m=0; m<26; m++) {
+							clear[0] = i + 65;
+							clear[1] = j + 65;
+							clear[2] = k + 65;
+							clear[3] = l + 65;
+							clear[4] = m + 65;
+							clear[blockLen] = '\0';
+							cipher = enigma(clear, &p);
+							printf("%d: %s -> %s (%s)\n", cpt, clear, cipher, blockToHex(cipher));
+							fprintf(fic, "%s\n", blockToHex(cipher));
+							cpt ++;
+						}
 					}
 				}
 			}
@@ -215,10 +216,31 @@ int main(void) {
 		free(clear);
 		free(cipher);
 		fclose(fic);
-		printf("INFO: file close\n");
+		printf("INFO: file close\n\n");
 	} else {
 		printf("INFO: open error\n");
 		exit(EXIT_FAILURE);
 	}
+}
+
+
+void testCipher() {
+	params p;
+	char *clear = NULL;
+	char *cipher = NULL;
+
+	initParams(&p);
+	clear = "AAAAA";
+	cipher = enigma(clear, &p);
+	printf("%s -> %s (%s)\n", clear, cipher, blockToHex(cipher));
+	clear = "EZZZZ";
+	cipher = enigma(clear, &p);
+	printf("%s -> %s (%s)\n", clear, cipher, blockToHex(cipher));
+}
+
+
+int main(void) {
+	generateFile();
+	testCipher();
 	return 1;
 }
