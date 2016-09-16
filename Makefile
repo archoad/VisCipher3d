@@ -26,7 +26,7 @@ MATH_FLAGS= -lm
 CRYPTO_FLAGS= -lcrypto
 PNG_FLAGS= -lpng
 
-all: dest_sys visCipherCmp3d visCipher3d cipher vigenere enigma
+all: dest_sys visCipherCmp3d visCipher3d cipher testAESkey vigenere enigma
 
 visCipherCmp3d: visCipherCmp3d.c
 	$(COMPIL) $(CFLAGS) $(IFLAGSDIR) $(LFLAGSDIR) $(MATH_FLAGS) $(GL_FLAGS) $(PNG_FLAGS) $(CRYPTO_FLAGS) $< -o $@
@@ -39,6 +39,11 @@ visCipher3d: visCipher3d.c
 cipher: cipher.c
 	$(COMPIL) $(CFLAGS) $(IFLAGSDIR) $(LFLAGSDIR) $(CRYPTO_FLAGS) $(MATH_FLAGS) $< -o $@
 	@$(STRIP) $@
+
+testAESkey: testAESkey.c
+	$(COMPIL) $(CFLAGS) $(IFLAGSDIR) $(LFLAGSDIR) $(CRYPTO_FLAGS) $(MATH_FLAGS) $< -o $@
+	@$(STRIP) $@
+
 
 vigenere: vigenere.c
 	$(COMPIL) $(CFLAGS) $(IFLAGSDIR) $(LFLAGSDIR) $(MATH_FLAGS) $< -o $@
@@ -55,5 +60,6 @@ clean:
 	@rm -f visCipherCmp3d
 	@rm -f visCipher3d
 	@rm -f cipher
+	@rm -f testAESkey
 	@rm -f vigenere
 	@rm -f enigma

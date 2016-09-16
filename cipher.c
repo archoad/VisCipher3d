@@ -48,6 +48,11 @@ void usage(void) {
 }
 
 
+void clearScreen(void) {
+	printf("\x1b[2J\x1b[1;1H");
+}
+
+
 void displayInfos(char text[], short key) {
 	couleur("32");
 	if (key) {
@@ -215,10 +220,11 @@ void generateFile(void) {
 			if (algo == 9 /*SHA1*/) { SHA1Hash(clear, cipher); k=0; }
 			if (algo == 10 /*SHA256*/) { SHA256Hash(clear, cipher); k=0; }
 			if (algo == 11 /*idea*/) { IDEAencrypt(clear, cipher, key); k=1; }
-			fprintf(fic, "%s", printBlock(cipher, cipherLengthInByte));
-			fprintf(fic, "\n");
-			printf("%lu\t", i);
-			displayResults(clear, cipher, key, k);
+			fprintf(fic, "%s\n", printBlock(cipher, cipherLengthInByte));
+			if (i%1000 == 0) {
+				printf("%lu\t", i);
+				displayResults(clear, cipher, key, k);
+			}
 		}
 		fclose(fic);
 		printf("INFO: file close\n");
@@ -351,6 +357,7 @@ void vectorTest(void) {
 
 
 int main(int argc, char *argv[]) {
+	clearScreen();
 	switch (argc) {
 		case 3:
 			if (strncmp(argv[2], "aes", 3) == 0) { algo = 1; }
@@ -366,82 +373,83 @@ int main(int argc, char *argv[]) {
 			else if (strncmp(argv[2], "idea", 4) == 0) { algo = 11; }
 			else {
 				usage();
+				vectorTest();
 				exit(EXIT_FAILURE);
 			}
-			iterations = atol(argv[1]);
-			switch (algo) {
-				case 1: // AES
-					clearLengthInByte = 16;
-					keyLengthInByte = 16;
-					cipherLengthInByte = 16;
-					displayInfos("AES", 1);
-					break;
-				case 2: // Blowfish
-					clearLengthInByte = 8;
-					keyLengthInByte = 8;
-					cipherLengthInByte = 8;
-					displayInfos("Blowfish", 1);
-					break;
-				case 3: // DES
-					clearLengthInByte = 8;
-					keyLengthInByte = 8;
-					cipherLengthInByte = 8;
-					displayInfos("DES", 1);
-					break;
-				case 4: // Camellia
-					clearLengthInByte = 16;
-					keyLengthInByte = 16;
-					cipherLengthInByte = 16;
-					displayInfos("Camellia", 1);
-					break;
-				case 5: // RC4
-					clearLengthInByte = 16;
-					keyLengthInByte = 16;
-					cipherLengthInByte = 16;
-					displayInfos("RC4", 1);
-					break;
-				case 6: // CAST
-					clearLengthInByte = 8;
-					keyLengthInByte = 16;
-					cipherLengthInByte = 8;
-					displayInfos("CAST", 1);
-					break;
-				case 7: // MD4
-					clearLengthInByte = 16;
-					cipherLengthInByte = MD4_DIGEST_LENGTH;
-					displayInfos("MD4", 0);
-					break;
-				case 8: // MD5
-					clearLengthInByte = 16;
-					cipherLengthInByte = MD5_DIGEST_LENGTH;
-					displayInfos("MD5", 0);
-					break;
-				case 9: // SHA1
-					clearLengthInByte = 16;
-					cipherLengthInByte = SHA_DIGEST_LENGTH;
-					displayInfos("SHA1", 0);
-					break;
-				case 10: // SHA256
-					clearLengthInByte = 16;
-					cipherLengthInByte = SHA256_DIGEST_LENGTH;
-					displayInfos("SHA256", 0);
-					break;
-				case 11: // idea
-					clearLengthInByte = 8;
-					keyLengthInByte = 16;
-					cipherLengthInByte = 8;
-					displayInfos("IDEA", 1);
-					break;
-				default:
-					break;
-			}
-			generateFile();
-			exit(EXIT_SUCCESS);
 			break;
 		default:
 			usage();
 			vectorTest();
 			exit(EXIT_FAILURE);
 			break;
-		}
+	}
+	iterations = atol(argv[1]);
+	switch (algo) {
+		case 1: // AES
+			clearLengthInByte = 16;
+			keyLengthInByte = 16;
+			cipherLengthInByte = 16;
+			displayInfos("AES", 1);
+			break;
+		case 2: // Blowfish
+			clearLengthInByte = 8;
+			keyLengthInByte = 8;
+			cipherLengthInByte = 8;
+			displayInfos("Blowfish", 1);
+			break;
+		case 3: // DES
+			clearLengthInByte = 8;
+			keyLengthInByte = 8;
+			cipherLengthInByte = 8;
+			displayInfos("DES", 1);
+			break;
+		case 4: // Camellia
+			clearLengthInByte = 16;
+			keyLengthInByte = 16;
+			cipherLengthInByte = 16;
+			displayInfos("Camellia", 1);
+			break;
+		case 5: // RC4
+			clearLengthInByte = 16;
+			keyLengthInByte = 16;
+			cipherLengthInByte = 16;
+			displayInfos("RC4", 1);
+			break;
+		case 6: // CAST
+			clearLengthInByte = 8;
+			keyLengthInByte = 16;
+			cipherLengthInByte = 8;
+			displayInfos("CAST", 1);
+			break;
+		case 7: // MD4
+			clearLengthInByte = 16;
+			cipherLengthInByte = MD4_DIGEST_LENGTH;
+			displayInfos("MD4", 0);
+			break;
+		case 8: // MD5
+			clearLengthInByte = 16;
+			cipherLengthInByte = MD5_DIGEST_LENGTH;
+			displayInfos("MD5", 0);
+			break;
+		case 9: // SHA1
+			clearLengthInByte = 16;
+			cipherLengthInByte = SHA_DIGEST_LENGTH;
+			displayInfos("SHA1", 0);
+			break;
+		case 10: // SHA256
+			clearLengthInByte = 16;
+			cipherLengthInByte = SHA256_DIGEST_LENGTH;
+			displayInfos("SHA256", 0);
+			break;
+		case 11: // idea
+			clearLengthInByte = 8;
+			keyLengthInByte = 16;
+			cipherLengthInByte = 8;
+			displayInfos("IDEA", 1);
+			break;
+		default:
+			break;
+	}
+	generateFile();
+	exit(EXIT_SUCCESS);
 }

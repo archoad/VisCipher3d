@@ -453,16 +453,23 @@ void display(void) {
 
 	drawText();
 	glCallList(textList);
-//	if (displayHilbert) {
-//		drawHilbert();
-//		glCallList(hilbertList);
-//	}
 
 	glPushMatrix();
 	glTranslatef(xx, yy, -zoom);
 	glRotatef(rotx, 1.0, 0.0, 0.0);
 	glRotatef(roty, 0.0, 1.0, 0.0);
 	glRotatef(rotz, 0.0, 0.0, 1.0);
+
+	GLfloat ambient1[] = {0.15f, 0.15f, 0.15f, 1.0f};
+	GLfloat diffuse1[] = {0.8f, 0.8f, 0.8f, 1.0f};
+	GLfloat specular1[] = {1.0f, 1.0f, 1.0f, 1.0f};
+	GLfloat position1[] = {0.0f, 0.0f, 24.0f, 1.0f};
+	glLightfv(GL_LIGHT1, GL_AMBIENT, ambient1);
+	glLightfv(GL_LIGHT1, GL_DIFFUSE, diffuse1);
+	glLightfv(GL_LIGHT1, GL_DIFFUSE, specular1);
+	glLightfv(GL_LIGHT1, GL_POSITION, position1);
+	glEnable(GL_LIGHT1);
+
 	drawAxes();
 	if (displayHilbert) {
 		glEnableClientState(GL_VERTEX_ARRAY);
@@ -499,43 +506,50 @@ void init(void) {
 		glClearColor(0.1, 0.1, 0.1, 1.0);
 	}
 
-	GLfloat position[] = {0.0, 0.0, 0.0, 1.0};
-	glLightfv(GL_LIGHT0, GL_POSITION, position);
-
-	GLfloat modelAmbient[] = {0.5, 0.5, 0.5, 1.0};
-	glLightModelfv(GL_LIGHT_MODEL_AMBIENT, modelAmbient);
-
 	glEnable(GL_LIGHTING);
+
+	GLfloat ambient[] = {0.05f, 0.05f, 0.05f, 1.0f};
+	GLfloat diffuse[] = {0.8f, 0.8f, 0.8f, 1.0f};
+	GLfloat specular[] = {1.0f, 1.0f, 1.0f, 1.0f};
+	GLfloat position[] = {0.0f, 0.0f, 0.0f, 1.0f};
+	glLightfv(GL_LIGHT0, GL_AMBIENT, ambient);
+	glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuse);
+	glLightfv(GL_LIGHT0, GL_DIFFUSE, specular);
+	glLightfv(GL_LIGHT0, GL_POSITION, position);
 	glEnable(GL_LIGHT0);
+
 	glEnable(GL_COLOR_MATERIAL);
 	glColorMaterial(GL_FRONT, GL_AMBIENT_AND_DIFFUSE);
+	GLfloat matAmbient[] = {0.3f, 0.3f, 0.3f, 1.0f};
+	GLfloat matDiffuse[] = {0.6f, 0.6f, 0.6f, 1.0f};
+	GLfloat matSpecular[] = {0.8f, 0.8f, 0.8f, 1.0f};
+	GLfloat matShininess[] = {128.0f};
+	glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, matAmbient);
+	glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, matDiffuse);
+	glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, matSpecular);
+	glMaterialfv(GL_FRONT_AND_BACK, GL_SHININESS, matShininess);
+
+	GLfloat baseAmbient[] = {0.5f, 0.5f, 0.5f, 0.5f};
+	glLightModelfv(GL_LIGHT_MODEL_AMBIENT, baseAmbient);
+	glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, GL_TRUE);
 
 	glShadeModel(GL_SMOOTH);
 	glEnable(GL_DEPTH_TEST);
-
-	GLfloat no_mat[] = {0.0, 0.0, 0.0, 1.0};
-	GLfloat mat_diffuse[] = {0.1, 0.5, 0.8, 1.0};
-	GLfloat mat_specular[] = {1.0, 1.0, 1.0, 1.0};
-	GLfloat shininess[] = {128.0};
-	glMaterialfv(GL_FRONT, GL_AMBIENT, no_mat);
-	glMaterialfv(GL_FRONT, GL_DIFFUSE, mat_diffuse);
-	glMaterialfv(GL_FRONT, GL_SPECULAR, mat_specular);
-	glMaterialfv(GL_FRONT, GL_SHININESS, shininess);
-	glMaterialfv(GL_FRONT, GL_EMISSION, no_mat);
 
 	glEnable(GL_NORMALIZE);
 	glEnable(GL_AUTO_NORMAL);
 	glDepthFunc(GL_LESS);
 
+	glDisable(GL_CULL_FACE);
 	drawObject();
 }
 
 
 void glmain(int argc, char *argv[]) {
 	glutInit(&argc, argv);
+	glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH);
 	glutInitWindowSize(winSizeW, winSizeH);
 	glutInitWindowPosition(120, 10);
-	glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH);
 	glutCreateWindow(WINDOW_TITLE_PREFIX);
 	init();
 	glutDisplayFunc(display);
@@ -580,6 +594,7 @@ double toDouble(BIGNUM *bn_val) {
 	double result = 0.0;
 	int i;
 	char *strVal = NULL;
+
 	BN_set_word(bn_modulo, pow(2, 52));
 	BN_mod(bn_rem, bn_val, bn_modulo, ctx);
 	strVal = BN_bn2dec(bn_rem);
