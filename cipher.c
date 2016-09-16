@@ -19,14 +19,13 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301, USA.*/
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
-#include <openssl/bn.h>
 #include <openssl/aes.h>
 #include <openssl/blowfish.h>
+#include <openssl/camellia.h>
 #include <openssl/des.h>
 #include <openssl/rc4.h>
-#include <openssl/evp.h>
-#include <openssl/bio.h>
-#include <openssl/buffer.h>
+#include <openssl/cast.h>
+#include <openssl/idea.h>
 #include <openssl/md5.h>
 #include <openssl/md4.h>
 #include <openssl/sha.h>
@@ -35,10 +34,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301, USA.*/
 
 
 static unsigned long iterations;
-
+static int clearLengthInByte=0, keyLengthInByte=0, cipherLengthInByte=0;
 static int algo = 0;
-
-static int clearSizeInByte = 0, keySizeInByte = 0, cipherSizeInByte = 0;
 
 
 void usage(void) {
@@ -47,262 +44,181 @@ void usage(void) {
 	couleur("0");
 	printf("Syntaxe: cipher <num> <algo>\n");
 	printf("\t<num> -> sample size\n");
-	printf("\t<algo> -> 'aes', 'blowfish', '3des', 'des', 'rc4', 'md4', 'md5', 'sha1', 'sha256' or 'base64'\n");
+	printf("\t<algo> -> 'aes', 'blowfish', 'camellia', 'des', 'rc4', 'cast', 'idea', 'md4', 'md5', 'sha1' or 'sha256'\n");
 }
 
 
-unsigned char assignByte(char num[8]) {
-	int i = 0;
-	unsigned char result = 0;
-	for (i=0; i<8; ++i) {
-		result |= (num[i] == '1') << (7 - i);
+void displayInfos(char text[], short key) {
+	couleur("32");
+	if (key) {
+		printf("INFO: %s\tclear length: %d,\tkey length: %d,\tcipher length: %d\n", text, clearLengthInByte, keyLengthInByte, cipherLengthInByte);
+	} else {
+		printf("INFO: %s\ttext length: %d,\tdigest length: %d\n", text, clearLengthInByte, cipherLengthInByte);
 	}
-	return(result);
+	couleur("0");
 }
 
 
-void integerToByte(unsigned int val, char bits[8]) {
-	int i=0;
-	for (i=7; i>=0; i--) {
-		if ((val >> i) & 1) {
-			bits[7-i] = '1';
-		} else {
-			bits[7-i] = '0';
-		}
+void initBlock(unsigned char block[], int nbrOfBytes, char *value) {
+	int i=0, j=0;
+	unsigned char temp[nbrOfBytes*2];
+	char c;
+
+	block[0] = 0xff;
+	for (i=0; i<nbrOfBytes*2; i++) {
+		c = value[i];
+		if (c>=97) { temp[i] = c - 87; }
+		else if (c>=65) { temp[i] = c - 55; }
+		else { temp[i] = c - 48; }
+	}
+	j=0;
+	for (i=0; i<nbrOfBytes*2; i+=2) {
+		block[j] = temp[i]*16 + temp[i+1];
+		j++;
 	}
 }
 
 
-char *blockToHex(unsigned char *block, int bytesSize) {
-	int i, j;
-	char *result = calloc((bytesSize*2)+1, sizeof(char));
-	result[bytesSize*2] = '\0';
-	j = 0;
-	for (i=0; i<bytesSize; i++) {
-		sprintf(&result[j], "%x", (block[i] & 0xf0)>>4);
-		sprintf(&result[j+1], "%x", (block[i] & 0x0f));
+char* printBlock(unsigned char block[], int nbrOfBytes) {
+	char *result = calloc((nbrOfBytes*2)+1, sizeof(char));
+	result[nbrOfBytes*2] = '\0';
+	int i=0, j=0;
+	for (i=0; i<nbrOfBytes; i++) {
+		sprintf(&result[j], "%X", (block[i] & 0xf0)>>4);
+		sprintf(&result[j+1], "%X", (block[i] & 0x0f));
 		j+=2;
 	}
 	return(result);
 }
 
 
-unsigned char* generateNBytesBlock(unsigned int iteration, int bytesSize) {
-	char bits[8] = "00000000";
-	unsigned char *block = calloc(bytesSize, (sizeof(block)));
-	if (iteration < 256) {
-		integerToByte(iteration, bits);
-		block[bytesSize-1] = assignByte(bits);
+void intToHex(unsigned long val, int nbrOfBytes, unsigned char block[]) {
+	int i=0;
+	for (i=nbrOfBytes-1; i>=0; i--) {
+		block[i] = val % 256;
+		val /= 256;
 	}
-	if ((iteration >= 256) && (iteration < 65536)) {
-		integerToByte(iteration, bits);
-		block[bytesSize-1] = assignByte(bits);
-		integerToByte(iteration>>8, bits);
-		block[bytesSize-2] = assignByte(bits);
-	}
-	if ((iteration >= 65536) && (iteration < 16777216)) {
-		integerToByte(iteration, bits);
-		block[bytesSize-1] = assignByte(bits);
-		integerToByte(iteration>>8, bits);
-		block[bytesSize-2] = assignByte(bits);
-		integerToByte(iteration>>16, bits);
-		block[bytesSize-3] = assignByte(bits);
-	}
-	if ((iteration >= 16777216) && (iteration < 4294967295)) {
-		integerToByte(iteration, bits);
-		block[bytesSize-1] = assignByte(bits);
-		integerToByte(iteration>>8, bits);
-		block[bytesSize-2] = assignByte(bits);
-		integerToByte(iteration>>16, bits);
-		block[bytesSize-3] = assignByte(bits);
-		integerToByte(iteration>>24, bits);
-		block[bytesSize-4] = assignByte(bits);
-	}
-	return(block);
 }
 
 
-unsigned char *AESencrypt(unsigned char *clear, unsigned int cpt) {
-	unsigned char key[keySizeInByte];
-	unsigned char *cipher = calloc(cipherSizeInByte, (sizeof(unsigned char)));
+void displayResults(unsigned char clear[], unsigned char cipher[], unsigned char key[], short k) {
+	if (k) {
+		printf("Clear: %s,\tKey: %s,\tCipher: %s\n",
+			printBlock(clear, clearLengthInByte),
+			printBlock(key, keyLengthInByte),
+			printBlock(cipher, cipherLengthInByte));
+	} else {
+		printf("Text: %s,\tDigest: %s\n",
+			printBlock(clear, clearLengthInByte),
+			printBlock(cipher, cipherLengthInByte));
+	}
+}
+
+
+void AESencrypt(unsigned char clear[], unsigned char cipher[], unsigned char key[]) {
 	AES_KEY expandKey;
-	int i = 0;
-	key[0] = assignByte("00000001");
-	for (i=1; i<keySizeInByte; i++) { key[i] = assignByte("00000000"); }
-	AES_set_encrypt_key(key, keySizeInByte*8, &expandKey);
-	AES_encrypt(clear, cipher, &expandKey);
-	printf("%d\tclear: %s,\tkey: %s,\tcipher: %s\n", cpt, blockToHex(clear, clearSizeInByte), blockToHex(key, keySizeInByte), blockToHex(cipher, cipherSizeInByte));
-	return(cipher);
+	AES_set_encrypt_key(key, keyLengthInByte*8, &expandKey);
+	AES_ecb_encrypt(clear, cipher, &expandKey, AES_ENCRYPT);
 }
 
 
-unsigned char *BlowfishEncrypt(unsigned char *clear, unsigned int cpt) {
-	unsigned char key[keySizeInByte];
-	unsigned char *cipher =  calloc(cipherSizeInByte, (sizeof(unsigned char)));
+void BlowfishEncrypt(unsigned char clear[], unsigned char cipher[], unsigned char key[]) {
 	BF_KEY expandKey;
-	int i = 0;
-	key[0] = assignByte("00000001");
-	for (i=1; i<keySizeInByte; i++) { key[i] = assignByte("00000000"); }
-	BF_set_key(&expandKey, keySizeInByte, key); //128 bits key
+	BF_set_key(&expandKey, keyLengthInByte, key);
 	BF_ecb_encrypt(clear, cipher, &expandKey, BF_ENCRYPT);
-	printf("%d\tclear: %s,\tkey: %s,\tcipher: %s\n", cpt, blockToHex(clear, clearSizeInByte), blockToHex(key, keySizeInByte), blockToHex(cipher, cipherSizeInByte));
-	return(cipher);
 }
 
 
-unsigned char *DESencrypt(unsigned char *clear, unsigned int cpt) {
-	unsigned char key[keySizeInByte];
-	unsigned char *cipher =  calloc(cipherSizeInByte, (sizeof(unsigned char)));
-	DES_cblock clear_des;
-	DES_cblock cipher_des;
-	int i = 0;
-	memcpy(clear_des, clear, clearSizeInByte);
+void DESencrypt(unsigned char clear[], unsigned char cipher[], unsigned char key[]) {
+	DES_cblock clearDES;
+	DES_cblock cipherDES;
+	DES_cblock keyDES;
 	DES_key_schedule expandKey;
-	key[0] = assignByte("00000001");
-	for (i=1; i<keySizeInByte; i++) { key[i] = assignByte("00000000"); }
-	DES_set_key(&key, &expandKey);
-	DES_ecb_encrypt(&clear_des, &cipher_des, &expandKey, DES_ENCRYPT);
-	memcpy(cipher, cipher_des, cipherSizeInByte);
-	printf("%d\tclear: %s,\tkey: %s,\tcipher: %s\n", cpt, blockToHex(clear, clearSizeInByte), blockToHex(key, keySizeInByte), blockToHex(cipher, cipherSizeInByte));
-	return(cipher);
+
+	memcpy(clearDES, clear, clearLengthInByte);
+	memcpy(keyDES, key, keyLengthInByte);
+	DES_set_key(&keyDES, &expandKey);
+	DES_ecb_encrypt(&clearDES, &cipherDES, &expandKey, DES_ENCRYPT);
+	memcpy(cipher, cipherDES, cipherLengthInByte);
 }
 
 
-unsigned char *tripleDESencrypt(unsigned char *clear, unsigned int cpt) {
-	unsigned char key1[keySizeInByte], key2[keySizeInByte], key3[keySizeInByte];
-	unsigned char *cipher =  calloc(cipherSizeInByte, (sizeof(unsigned char)));
-	DES_cblock clear_des;
-	DES_cblock cipher_des;
-	int i = 0;
-	memcpy(clear_des, clear, clearSizeInByte);
-	DES_key_schedule expandKey1;
-	DES_key_schedule expandKey2;
-	DES_key_schedule expandKey3;
-	key1[0] = assignByte("00000001");
-	for (i=1; i<keySizeInByte; i++) { key1[i] = assignByte("00000000"); }
-	key2[0] = assignByte("00000011");
-	for (i=1; i<keySizeInByte; i++) { key2[i] = assignByte("00000000"); }
-	key3[0] = assignByte("00000111");
-	for (i=1; i<keySizeInByte; i++) { key3[i] = assignByte("00000000"); }
-	DES_set_key(&key1, &expandKey1);
-	DES_set_key(&key2, &expandKey2);
-	DES_set_key(&key3, &expandKey3);
-	DES_ecb3_encrypt(&clear_des, &cipher_des, &expandKey1, &expandKey2, &expandKey3, DES_ENCRYPT);
-	memcpy(cipher, cipher_des, cipherSizeInByte);
-	printf("%d\tclear: %s,\tkeys: %s %s %s,\tcipher: %s\n", cpt, blockToHex(clear, clearSizeInByte), blockToHex(key1, keySizeInByte), blockToHex(key2, keySizeInByte), blockToHex(key3, keySizeInByte), blockToHex(cipher, cipherSizeInByte));
-	return(cipher);
+void camelliaEncrypt(unsigned char clear[], unsigned char cipher[], unsigned char key[]) {
+	CAMELLIA_KEY expandKey;
+	Camellia_set_key(key, keyLengthInByte*8, &expandKey);
+	Camellia_ecb_encrypt(clear, cipher, &expandKey, CAMELLIA_ENCRYPT);
 }
 
 
-unsigned char *RC4encrypt(unsigned char *clear, unsigned int cpt) {
-	unsigned char key[keySizeInByte];
-	unsigned char *cipher = calloc(cipherSizeInByte, (sizeof(unsigned char)));
-	unsigned char *decipher = calloc(clearSizeInByte, (sizeof(unsigned char)));
+void RC4encrypt(unsigned char clear[], unsigned char cipher[], unsigned char key[]) {
 	RC4_KEY rc4_key;
-	int i = 0;
-	key[0] = assignByte("00000001");
-	for (i=1; i<keySizeInByte; i++) { key[i] = assignByte("00000000"); }
-	RC4_set_key(&rc4_key, keySizeInByte, key);
-	RC4(&rc4_key, cipherSizeInByte, clear, cipher);
-
-	RC4_set_key(&rc4_key, keySizeInByte, key);
-	RC4(&rc4_key, clearSizeInByte, cipher, decipher);
-	printf("%d\tclear: %s, key: %s, cipher: %s, decipher: %s\n", cpt, blockToHex(clear, clearSizeInByte), blockToHex(key, keySizeInByte), blockToHex(cipher, cipherSizeInByte), blockToHex(decipher, clearSizeInByte));
-	return(cipher);
+	RC4_set_key(&rc4_key, keyLengthInByte, key);
+	RC4(&rc4_key, cipherLengthInByte, clear, cipher);
 }
 
 
-unsigned char *base64encode(unsigned char *clear, unsigned int cpt) {
-	BIO *bmem, *b64;
-	BUF_MEM *bptr;
-	unsigned char *cipher = NULL;
-
-	b64 = BIO_new(BIO_f_base64());
-	bmem = BIO_new(BIO_s_mem());
-	b64 = BIO_push(b64, bmem);
-
-	BIO_write(b64, clear, sizeof(clear));
-	BIO_flush(b64);
-	BIO_get_mem_ptr(b64, &bptr);
-
-	cipher = calloc(bptr->length, sizeof(unsigned char));
-	memcpy(cipher, bptr->data, bptr->length-1);
-	cipher[bptr->length-1] = 0;
-
-	printf("%d\tclear: %s, cipher: %s(%s)\n", cpt, blockToHex(clear, clearSizeInByte), cipher, blockToHex(cipher, keySizeInByte));
-	BIO_free_all(b64);
-	return(cipher);
+void CASTencrypt(unsigned char clear[], unsigned char cipher[], unsigned char key[]) {
+	CAST_KEY expandKey;
+	CAST_set_key(&expandKey, keyLengthInByte*8, key);
+	CAST_ecb_encrypt(clear, cipher, &expandKey, CAST_ENCRYPT);
 }
 
 
-unsigned char *MD4Hash(unsigned char *text, unsigned int cpt) {
-	unsigned char *digest = calloc(MD4_DIGEST_LENGTH, (sizeof(unsigned char)));
-	MD4(text, clearSizeInByte, digest);
-	printf("%d\ttext: %s,\tMD4 digest: %s\n", cpt, blockToHex(text, clearSizeInByte), blockToHex(digest, MD4_DIGEST_LENGTH));
-	return(digest);
+void IDEAencrypt(unsigned char clear[], unsigned char cipher[], unsigned char key[]) {
+	IDEA_KEY_SCHEDULE expandKey;
+	idea_set_encrypt_key(key, &expandKey);
+	idea_ecb_encrypt(clear, cipher, &expandKey);
 }
 
 
-unsigned char *MD5Hash(unsigned char *text, unsigned int cpt) {
-	unsigned char *digest = calloc(MD5_DIGEST_LENGTH, (sizeof(unsigned char)));
-	MD5(text, clearSizeInByte, digest);
-	printf("%d\ttext: %s,\tMD5 digest: %s\n", cpt, blockToHex(text, clearSizeInByte), blockToHex(digest, MD5_DIGEST_LENGTH));
-	return(digest);
+void MD4Hash(unsigned char clear[], unsigned char cipher[]) {
+	MD4(clear, clearLengthInByte, cipher);
 }
 
 
-unsigned char *SHA1Hash(unsigned char *text, unsigned int cpt) {
-	unsigned char *digest = calloc(SHA_DIGEST_LENGTH, (sizeof(unsigned char)));
-	SHA1(text, clearSizeInByte, digest);
-	printf("%d\ttext: %s,\tSHA1 digest: %s\n", cpt, blockToHex(text, clearSizeInByte), blockToHex(digest, SHA_DIGEST_LENGTH));
-	return(digest);
+void MD5Hash(unsigned char clear[], unsigned char cipher[]) {
+	MD5(clear, clearLengthInByte, cipher);
 }
 
 
-unsigned char *SHA256Hash(unsigned char *text, unsigned int cpt) {
-	unsigned char *digest = calloc(SHA256_DIGEST_LENGTH, (sizeof(unsigned char)));
-	SHA256(text, clearSizeInByte, digest);
-	printf("%d\ttext: %s,\tSHA256 digest: %s\n", cpt, blockToHex(text, clearSizeInByte), blockToHex(digest, SHA256_DIGEST_LENGTH));
-	return(digest);
+void SHA1Hash(unsigned char clear[], unsigned char cipher[]) {
+	SHA1(clear, clearLengthInByte, cipher);
 }
 
 
-void generateFile(char *a) {
-	unsigned int i = 0;
-	unsigned char *cipher = NULL;
-	unsigned char *clear = NULL;
+void SHA256Hash(unsigned char clear[], unsigned char cipher[]) {
+	SHA256(clear, clearLengthInByte, cipher);
+}
+
+
+void generateFile(void) {
+	unsigned long i=0;
+	short k=0;
+	unsigned char clear[clearLengthInByte];
+	unsigned char key[keyLengthInByte];
+	unsigned char cipher[cipherLengthInByte];
 	FILE *fic = fopen("result.dat", "w");
 
 	if (fic != NULL) {
 		printf("INFO: file create\n");
-		if (algo == 1 /*AES*/) { clearSizeInByte = 16; keySizeInByte = 16; cipherSizeInByte = 16; }
-		if (algo == 2 /*Blowfish*/) { clearSizeInByte = 8; keySizeInByte = 8; cipherSizeInByte = 8; }
-		if (algo == 3 /*DES*/) { clearSizeInByte = 8; keySizeInByte = 7; cipherSizeInByte = 8; }
-		if (algo == 4 /*3DES*/) { clearSizeInByte = 8; keySizeInByte = 7; cipherSizeInByte = 8; }
-		if (algo == 5 /*RC4*/) { clearSizeInByte = 16; keySizeInByte = 8; cipherSizeInByte = 16; }
-		if (algo == 6 /*base64*/) { clearSizeInByte = 8; keySizeInByte = 16; }
-		if (algo == 7 /*MD4*/) { clearSizeInByte = 16; keySizeInByte = MD4_DIGEST_LENGTH; }
-		if (algo == 8 /*MD5*/) { clearSizeInByte = 16; keySizeInByte = MD5_DIGEST_LENGTH; }
-		if (algo == 9 /*SHA1*/) { clearSizeInByte = 16; keySizeInByte = SHA_DIGEST_LENGTH; }
-		if (algo == 10 /*SHA256*/) { clearSizeInByte = 16; keySizeInByte = SHA256_DIGEST_LENGTH; }
-
-		cipher = (unsigned char*)calloc(keySizeInByte, sizeof(unsigned char));
-		printf("INFO: %s -> clear block size: %d bits, cipher block size: %d bits\n", a, clearSizeInByte*8, keySizeInByte*8);
-
-		for (i=1; i<iterations; i++) {
-			clear = generateNBytesBlock(i, clearSizeInByte);
-			if (algo == 1 /*AES 128*/) { cipher = AESencrypt(clear, i); }
-			if (algo == 2 /*Blowfish*/) { cipher = BlowfishEncrypt(clear, i); }
-			if (algo == 3 /*DES*/) { cipher = DESencrypt(clear, i); }
-			if (algo == 4 /*3DES*/) { cipher = tripleDESencrypt(clear, i); }
-			if (algo == 5 /*RC4*/) { cipher = RC4encrypt(clear, i); }
-			if (algo == 6 /*base64*/) { cipher = base64encode(clear, i); }
-			if (algo == 7 /*MD4*/) { cipher = MD4Hash(clear, i); }
-			if (algo == 8 /*MD5*/) { cipher = MD5Hash(clear, i); }
-			if (algo == 9 /*SHA1*/) { cipher = SHA1Hash(clear, i); }
-			if (algo == 10 /*SHA256*/) { cipher = SHA256Hash(clear, i); }
-			fprintf(fic, "%s", blockToHex(cipher, keySizeInByte));
+		initBlock(key, keyLengthInByte, "80000000000000000000000000000000");
+		for (i=0; i<iterations; i++) {
+			intToHex(i, clearLengthInByte, clear);
+			if (algo == 1 /*AES 128*/) { AESencrypt(clear, cipher, key); k=1; }
+			if (algo == 2 /*Blowfish*/) { BlowfishEncrypt(clear, cipher, key); k=1; }
+			if (algo == 3 /*DES*/) { DESencrypt(clear, cipher, key); k=1; }
+			if (algo == 4 /*Camellia*/) { camelliaEncrypt(clear, cipher, key); k=1; }
+			if (algo == 5 /*RC4*/) { RC4encrypt(clear, cipher, key); k=1; }
+			if (algo == 6 /*CAST*/) { CASTencrypt(clear, cipher, key); k=1; }
+			if (algo == 7 /*MD4*/) { MD4Hash(clear, cipher); k=0; }
+			if (algo == 8 /*MD5*/) { MD5Hash(clear, cipher); k=0; }
+			if (algo == 9 /*SHA1*/) { SHA1Hash(clear, cipher); k=0; }
+			if (algo == 10 /*SHA256*/) { SHA256Hash(clear, cipher); k=0; }
+			if (algo == 11 /*idea*/) { IDEAencrypt(clear, cipher, key); k=1; }
+			fprintf(fic, "%s", printBlock(cipher, cipherLengthInByte));
 			fprintf(fic, "\n");
+			printf("%lu\t", i);
+			displayResults(clear, cipher, key, k);
 		}
 		fclose(fic);
 		printf("INFO: file close\n");
@@ -310,8 +226,127 @@ void generateFile(char *a) {
 		printf("INFO: open error\n");
 		exit(EXIT_FAILURE);
 	}
-	free(clear);
-	free(cipher);
+}
+
+
+void vectorTest(void) {
+	unsigned char *clear = NULL;
+	unsigned char *key = NULL;
+	unsigned char *cipher = NULL;
+
+	couleur("31"); printf("\nVector test\n"); couleur("0");
+
+	// AES
+	// https://www.cosic.esat.kuleuven.be/nessie/testvectors/bc/rijndael/rijndael.html
+	clearLengthInByte = 16;
+	keyLengthInByte = 16;
+	cipherLengthInByte = 16;
+	clear = (unsigned char *)calloc(clearLengthInByte, sizeof(clear));
+	key = (unsigned char *)calloc(keyLengthInByte, sizeof(key));
+	cipher = (unsigned char *)calloc(cipherLengthInByte, sizeof(cipher));
+	displayInfos("AES", 1);
+	initBlock(key, keyLengthInByte, "80000000000000000000000000000000");
+	intToHex(0, clearLengthInByte, clear);
+	AESencrypt(clear, cipher, key);
+	displayResults(clear, cipher, key, 1);
+	printf("Should be: 0EDD33D3C621E546455BD8BA1418BEC8\n\n");
+	free(clear); free(key); free(cipher);
+
+	// Blowfish
+	// https://www.schneier.com/code/vectors.txt
+	clearLengthInByte = 8;
+	keyLengthInByte = 8;
+	cipherLengthInByte = 8;
+	clear = (unsigned char *)calloc(clearLengthInByte, sizeof(clear));
+	key = (unsigned char *)calloc(keyLengthInByte, sizeof(key));
+	cipher = (unsigned char *)calloc(cipherLengthInByte, sizeof(cipher));
+	displayInfos("Blowfish", 1);
+	initBlock(key, keyLengthInByte, "00000000000000000000000000000000");
+	intToHex(0, clearLengthInByte, clear);
+	BlowfishEncrypt(clear, cipher, key);
+	displayResults(clear, cipher, key, 1);
+	printf("Should be: 4EF997456198DD78\n\n");
+	free(clear); free(key); free(cipher);
+
+	// DES
+	// https://www.cosic.esat.kuleuven.be/nessie/testvectors/bc/des/index.html
+	clearLengthInByte = 8;
+	keyLengthInByte = 8;
+	cipherLengthInByte = 8;
+	clear = (unsigned char *)calloc(clearLengthInByte, sizeof(clear));
+	key = (unsigned char *)calloc(keyLengthInByte, sizeof(key));
+	cipher = (unsigned char *)calloc(cipherLengthInByte, sizeof(cipher));
+	displayInfos("DES", 1);
+	initBlock(key, keyLengthInByte, "80000000000000000000000000000000");
+	intToHex(0, clearLengthInByte, clear);
+	DESencrypt(clear, cipher, key);
+	displayResults(clear, cipher, key, 1);
+	printf("Should be: 95A8D72813DAA94D\n\n");
+	free(clear); free(key); free(cipher);
+
+	// Camellia
+	// https://www.cosic.esat.kuleuven.be/nessie/testvectors/bc/camellia/camellia.html
+	clearLengthInByte = 16;
+	keyLengthInByte = 16;
+	cipherLengthInByte = 16;
+	clear = (unsigned char *)calloc(clearLengthInByte, sizeof(clear));
+	key = (unsigned char *)calloc(keyLengthInByte, sizeof(key));
+	cipher = (unsigned char *)calloc(cipherLengthInByte, sizeof(cipher));
+	displayInfos("Camellia", 1);
+	initBlock(key, keyLengthInByte, "80000000000000000000000000000000");
+	intToHex(0, clearLengthInByte, clear);
+	camelliaEncrypt(clear, cipher, key);
+	displayResults(clear, cipher, key, 1);
+	printf("Should be: 6C227F749319A3AA7DA235A9BBA05A2C\n\n");
+	free(clear); free(key); free(cipher);
+
+	// RC4
+	// https://www.cosic.esat.kuleuven.be/nessie/testvectors/sc/arcfour/Rc4-arcfour-128.verified.test-vectors
+	clearLengthInByte = 16;
+	keyLengthInByte = 16;
+	cipherLengthInByte = 16;
+	clear = (unsigned char *)calloc(clearLengthInByte, sizeof(clear));
+	key = (unsigned char *)calloc(keyLengthInByte, sizeof(key));
+	cipher = (unsigned char *)calloc(cipherLengthInByte, sizeof(cipher));
+	displayInfos("RC4", 1);
+	initBlock(key, keyLengthInByte, "80000000000000000000000000000000");
+	intToHex(0, clearLengthInByte, clear);
+	RC4encrypt(clear, cipher, key);
+	displayResults(clear, cipher, key, 1);
+	printf("Should be: 4ABC7C316D52E3FF0DF7370539EB7BD3\n\n");
+	free(clear); free(key); free(cipher);
+
+	// CAST
+	// https://www.cosic.esat.kuleuven.be/nessie/testvectors/bc/cast-128/Cast-128-128-64.verified.test-vectors
+	clearLengthInByte = 8;
+	keyLengthInByte = 16;
+	cipherLengthInByte = 8;
+	clear = (unsigned char *)calloc(clearLengthInByte, sizeof(clear));
+	key = (unsigned char *)calloc(keyLengthInByte, sizeof(key));
+	cipher = (unsigned char *)calloc(cipherLengthInByte, sizeof(cipher));
+	displayInfos("CAST", 1);
+	initBlock(key, keyLengthInByte, "80000000000000000000000000000000");
+	intToHex(0, clearLengthInByte, clear);
+	CASTencrypt(clear, cipher, key);
+	displayResults(clear, cipher, key, 1);
+	printf("Should be: EF854DE5D7D1895B\n\n");
+	free(clear); free(key); free(cipher);
+
+	// idea
+	// https://www.cosic.esat.kuleuven.be/nessie/testvectors/bc/idea/Idea-128-64.verified.test-vectors
+	clearLengthInByte = 8;
+	keyLengthInByte = 16;
+	cipherLengthInByte = 8;
+	clear = (unsigned char *)calloc(clearLengthInByte, sizeof(clear));
+	key = (unsigned char *)calloc(keyLengthInByte, sizeof(key));
+	cipher = (unsigned char *)calloc(cipherLengthInByte, sizeof(cipher));
+	displayInfos("IDEA", 1);
+	initBlock(key, keyLengthInByte, "80000000000000000000000000000000");
+	intToHex(0, clearLengthInByte, clear);
+	IDEAencrypt(clear, cipher, key);
+	displayResults(clear, cipher, key, 1);
+	printf("Should be: B1F5F7F87901370F\n\n");
+	free(clear); free(key); free(cipher);
 }
 
 
@@ -321,23 +356,91 @@ int main(int argc, char *argv[]) {
 			if (strncmp(argv[2], "aes", 3) == 0) { algo = 1; }
 			else if (strncmp(argv[2], "blowfish", 8) == 0) { algo = 2; }
 			else if (strncmp(argv[2], "des", 3) == 0) { algo = 3; }
-			else if (strncmp(argv[2], "3des", 4) == 0) { algo = 4; }
+			else if (strncmp(argv[2], "camellia", 4) == 0) { algo = 4; }
 			else if (strncmp(argv[2], "rc4", 3) == 0) { algo = 5; }
-			else if (strncmp(argv[2], "base64", 6) == 0) { algo = 6; }
+			else if (strncmp(argv[2], "cast", 6) == 0) { algo = 6; }
 			else if (strncmp(argv[2], "md4", 3) == 0) { algo = 7; }
 			else if (strncmp(argv[2], "md5", 3) == 0) { algo = 8; }
 			else if (strncmp(argv[2], "sha1", 4) == 0) { algo = 9; }
 			else if (strncmp(argv[2], "sha256", 6) == 0) { algo = 10; }
+			else if (strncmp(argv[2], "idea", 4) == 0) { algo = 11; }
 			else {
 				usage();
 				exit(EXIT_FAILURE);
 			}
-			iterations = atol(argv[1])+1;
-			generateFile(argv[2]);
+			iterations = atol(argv[1]);
+			switch (algo) {
+				case 1: // AES
+					clearLengthInByte = 16;
+					keyLengthInByte = 16;
+					cipherLengthInByte = 16;
+					displayInfos("AES", 1);
+					break;
+				case 2: // Blowfish
+					clearLengthInByte = 8;
+					keyLengthInByte = 8;
+					cipherLengthInByte = 8;
+					displayInfos("Blowfish", 1);
+					break;
+				case 3: // DES
+					clearLengthInByte = 8;
+					keyLengthInByte = 8;
+					cipherLengthInByte = 8;
+					displayInfos("DES", 1);
+					break;
+				case 4: // Camellia
+					clearLengthInByte = 16;
+					keyLengthInByte = 16;
+					cipherLengthInByte = 16;
+					displayInfos("Camellia", 1);
+					break;
+				case 5: // RC4
+					clearLengthInByte = 16;
+					keyLengthInByte = 16;
+					cipherLengthInByte = 16;
+					displayInfos("RC4", 1);
+					break;
+				case 6: // CAST
+					clearLengthInByte = 8;
+					keyLengthInByte = 16;
+					cipherLengthInByte = 8;
+					displayInfos("CAST", 1);
+					break;
+				case 7: // MD4
+					clearLengthInByte = 16;
+					cipherLengthInByte = MD4_DIGEST_LENGTH;
+					displayInfos("MD4", 0);
+					break;
+				case 8: // MD5
+					clearLengthInByte = 16;
+					cipherLengthInByte = MD5_DIGEST_LENGTH;
+					displayInfos("MD5", 0);
+					break;
+				case 9: // SHA1
+					clearLengthInByte = 16;
+					cipherLengthInByte = SHA_DIGEST_LENGTH;
+					displayInfos("SHA1", 0);
+					break;
+				case 10: // SHA256
+					clearLengthInByte = 16;
+					cipherLengthInByte = SHA256_DIGEST_LENGTH;
+					displayInfos("SHA256", 0);
+					break;
+				case 11: // idea
+					clearLengthInByte = 8;
+					keyLengthInByte = 16;
+					cipherLengthInByte = 8;
+					displayInfos("IDEA", 1);
+					break;
+				default:
+					break;
+			}
+			generateFile();
 			exit(EXIT_SUCCESS);
 			break;
 		default:
 			usage();
+			vectorTest();
 			exit(EXIT_FAILURE);
 			break;
 		}
