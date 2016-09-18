@@ -32,14 +32,17 @@ cat cat result.bin | hexdump -C
 
 static unsigned long iterations;
 static int clearLengthInByte=0, keyLengthInByte=0, cipherLengthInByte=0;
+static int power;
 
 
 
 
-void info(void) {
+void usage(void) {
 	couleur("31");
 	printf("Michel Dubois -- AES test key -- (c) 2016\n");
 	couleur("0");
+	printf("Syntaxe: testAESkey <power>\n");
+	printf("\t<power> -> 2^power keys generated\n");
 }
 
 
@@ -165,6 +168,8 @@ void testAEScipher(void) {
 
 
 void testKey(void) {
+	clock_t tic, tac;
+	double executionTime = 0.0;
 	unsigned long i=0;
 	unsigned char clear[clearLengthInByte];
 	unsigned char key[keyLengthInByte];
@@ -174,19 +179,23 @@ void testKey(void) {
 	if (fic != NULL) {
 		printf("INFO: file create\n");
 		intToHex(0, clearLengthInByte, clear);
+		tic = clock();
 		for (i=0; i<iterations; i++) {
 			intToSpecialHex(i, keyLengthInByte, key);
 			AESencrypt(clear, cipher, key);
 			fprintf(fic, "%s\n", printBlock(cipher, cipherLengthInByte));
-			if (i%10000 == 0) {
+			if (i%1 == 0) {
 				printf("%lu\t", i);
 				displayResults(clear, cipher, key);
 			}
 		}
+		tac = clock();
 		printf("%lu\t", i);
 		displayResults(clear, cipher, key);
 		fclose(fic);
 		printf("INFO: file close\n");
+		executionTime = (double)(tac - tic) / CLOCKS_PER_SEC;
+		printf("Execution time: %.8f\n", executionTime);
 	} else {
 		printf("INFO: open error\n");
 		exit(EXIT_FAILURE);
@@ -199,23 +208,23 @@ void vectorTest(void) {
 	unsigned char key[keyLengthInByte];
 	unsigned char cipher[cipherLengthInByte];
 
+	couleur("31");
+	printf("\nAES test with NIST vectors\n");
+	couleur("0");
+
 	initBlock(clear, clearLengthInByte, "3243f6a8885a308d313198a2e0370734");
 	initBlock(key, keyLengthInByte, "2b7e151628aed2a6abf7158809cf4f3c");
-	AESdisplayExpansionCipherKey(key);
 	AESencrypt(clear, cipher, key);
 	displayResults(clear, cipher, key);
 	printf("Normal result: 3925841d02dc09fbdc118597196a0b32\n");
-	AESdecrypt(clear, cipher, key);
-	displayResults(clear, cipher, key);
+	AESdisplayExpansionCipherKey(key);
 
 	initBlock(clear, clearLengthInByte, "00112233445566778899aabbccddeeff");
 	initBlock(key, keyLengthInByte, "000102030405060708090a0b0c0d0e0f");
-	AESdisplayExpansionCipherKey(key);
 	AESencrypt(clear, cipher, key);
 	displayResults(clear, cipher, key);
 	printf("Normal result: 69c4e0d86a7b0430d8cdb78070b4c55a\n");
-	AESdecrypt(clear, cipher, key);
-	displayResults(clear, cipher, key);
+	AESdisplayExpansionCipherKey(key);
 }
 
 
@@ -231,17 +240,25 @@ void testGreatNumber(void) {
 }
 
 
-int main(void) {
-	clearScreen();
-	info();
-	iterations = 4000000;
+int main(int argc, char *argv[]) {
 	clearLengthInByte = 16;
 	keyLengthInByte = 16;
 	cipherLengthInByte = 16;
 
-	vectorTest();
-	testKey();
-	//testAEScipher();
-	//testGreatNumber();
-	return(EXIT_SUCCESS);
+	switch (argc) {
+		case 2:
+			power = atoi(argv[1]);
+			clearScreen();
+			iterations = (unsigned long)pow(2, power);
+			testKey();
+			//testAEScipher();
+			//testGreatNumber();
+			return(EXIT_SUCCESS);
+			break;
+		default:
+			usage();
+			vectorTest();
+			exit(EXIT_FAILURE);
+			break;
+	}
 }

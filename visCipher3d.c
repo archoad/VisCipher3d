@@ -55,6 +55,8 @@ static float fps = 0.0,
 	zoom = 100.0,
 	prevx = 0.0,
 	prevy = 0.0,
+	alpha = 0.0,
+	pSize = 0.0,
 	sphereRadius = 0.6,
 	squareWidth = 0.055;
 
@@ -64,7 +66,7 @@ static BIGNUM *randList[5000000];
 
 typedef struct _point {
 	GLdouble x, y, z;
-	GLfloat r, g, b;
+	GLfloat r, g, b, a;
 } point;
 
 static point *pointsList = NULL;
@@ -86,6 +88,19 @@ void usage(void) {
 	printf("\t<filename> -> file where the results of the AES datas be stored\n");
 	printf("\t<background color> -> 'white' or 'black'\n");
 	printf("\t<color type> -> 'mono' or 'multi'\n");
+}
+
+
+double distance(point p1, point p2) {
+	double dx=0.0, dy=0.0, dz=0.0, dist=0.0;
+	dx = p2.x - p1.x;
+	dx = dx * dx;
+	dy = p2.y - p1.y;
+	dy = dy * dy;
+	dz = p2.z - p1.z;
+	dz = dz * dz;
+	dist = sqrt(dx + dy + dz);
+	return(dist);
 }
 
 
@@ -114,8 +129,8 @@ void takeScreenshot(char *filename) {
 
 
 void drawPoint(point p) {
-	glPointSize(1.0);
-	glColor3f(p.r, p.g, p.b);
+	glPointSize(pSize);
+	glColor4f(p.r, p.g, p.b, p.a);
 	glBegin(GL_POINTS);
 	glNormal3f(p.x, p.y, p.z);
 	glVertex3f(p.x, p.y, p.z);
@@ -124,14 +139,14 @@ void drawPoint(point p) {
 
 
 void drawSphere(point p) {
-	glColor3f(p.r, p.g, p.b);
+	glColor4f(p.r, p.g, p.b, p.a);
 	glTranslatef(p.x, p.y, p.z);
 	glutSolidSphere(sphereRadius, 8, 8);
 }
 
 
 void drawSquare(point p) {
-	glColor3f(p.r, p.g, p.b);
+	glColor4f(p.r, p.g, p.b, p.a);
 	glTranslatef(p.x, p.y, p.z);
 	glBegin(GL_QUADS);
 	glVertex3f(-squareWidth, -squareWidth, 0.0); // Bottom left corner
@@ -143,12 +158,15 @@ void drawSquare(point p) {
 
 
 void drawLine(point p1, point p2){
-	glLineWidth(1.0);
+	double d = distance(p1, p2);
+	double dx = p2.x - p1.x;
+	double dy = p2.y - p1.y;
+	double dz = p2.z - p1.z;
+	glColor4f(p1.r, p1.g, p1.b, p1.a);
+	glNormal3f(dx/d, dy/d, dz/d);
 	glBegin(GL_LINES);
-	glColor3f(p1.r, p1.g, p1.b);
-	glNormal3f(p1.x, p1.y, p1.z);
-	glVertex3f(p1.x, p1.y, p1.z);
-	glVertex3f(p2.x, p2.y, p2.z);
+		glVertex3f(p1.x, p1.y, p1.z);
+		glVertex3f(p2.x, p2.y, p2.z);
 	glEnd();
 }
 
@@ -361,6 +379,7 @@ void onMouse(int button, int state, int x, int y) {
 
 
 void onKeyboard(unsigned char key, int x, int y) {
+	unsigned long i = 0;
 	char *name = malloc(20 * sizeof(char));
 	switch (key) {
 		case 27: // Escape
@@ -397,6 +416,14 @@ void onKeyboard(unsigned char key, int x, int y) {
 		case 'h':
 			displayHilbert = !displayHilbert;
 			printf("INFO: display Hilbert graph %d\n", displayHilbert);
+			break;
+		case 'a':
+			alpha -= 0.05;
+			if (alpha <= 0) { alpha = 1.0; }
+			for (i=0; i<sampleSize; i++) {
+				pointsList[i].a = alpha;
+			}
+			printf("INFO: alpha channel %f\n", alpha);
 			break;
 		case 'r':
 			rotate = !rotate;
@@ -482,13 +509,17 @@ void display(void) {
 		glDisableClientState(GL_VERTEX_ARRAY);
 	}
 	if (sampleSize >= seuil) {
+		glPointSize(pSize);
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		glEnableClientState(GL_VERTEX_ARRAY);
 		glEnableClientState(GL_COLOR_ARRAY);
 		glVertexPointer(3, GL_DOUBLE, sizeof(point), pointsList);
-		glColorPointer(3, GL_FLOAT, sizeof(point), &pointsList[0].r);
+		glColorPointer(4, GL_FLOAT, sizeof(point), &pointsList[0].r);
 		glDrawArrays(GL_POINTS, 0, sampleSize);
 		glDisableClientState(GL_COLOR_ARRAY);
 		glDisableClientState(GL_VERTEX_ARRAY);
+		glDisable(GL_BLEND);
 	} else {
 		glCallList(objectList);
 	}
@@ -680,6 +711,7 @@ void populatePoints(BIGNUM *tab[]) {
 			hue = (double)i / (double)sampleSize;
 		}
 		hsv2rgb(hue, 1.0, 1.0, &(pointsList[i].r), &(pointsList[i].g), &(pointsList[i].b));
+		pointsList[i].a = alpha;
 		BN_add(bn_sum, bn_sum, tab[i]);
 		if (i>=3) {
 			BN_sub(bn_x, tab[i-3], tab[i-2]);
@@ -791,12 +823,10 @@ void playFile(int argc, char *argv[]) {
 int main(int argc, char *argv[]) {
 	switch (argc) {
 		case 4:
-			if (!strncmp(argv[2], "white", 5)) {
-				background = 1;
-			}
-			if (!strncmp(argv[3], "mono", 4)) {
-				mono = 1;
-			}
+			if (!strncmp(argv[2], "white", 5)) { background = 1; }
+			if (!strncmp(argv[3], "mono", 4)) { mono = 1; }
+			alpha = 1.0f;
+			pSize = 0.5f;
 			sampleSize = countFileLines(argv[1]);
 			randListSize = sizeof(randList) / sizeof(randList[0]);
 			if (sampleSize <= randListSize) {
