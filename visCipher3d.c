@@ -826,7 +826,7 @@ int main(int argc, char *argv[]) {
 			if (!strncmp(argv[2], "white", 5)) { background = 1; }
 			if (!strncmp(argv[3], "mono", 4)) { mono = 1; }
 			alpha = 1.0f;
-			pSize = 0.5f;
+			pSize = 1.0f;
 			sampleSize = countFileLines(argv[1]);
 			randListSize = sizeof(randList) / sizeof(randList[0]);
 			if (sampleSize <= randListSize) {

@@ -27,6 +27,7 @@ cat cat result.bin | hexdump -C
 #include <math.h>
 #include <time.h>
 #include <openssl/aes.h>
+#include <omp.h>
 
 #define couleur(param) printf("\033[%sm",param)
 
@@ -184,7 +185,7 @@ void testKey(void) {
 			intToSpecialHex(i, keyLengthInByte, key);
 			AESencrypt(clear, cipher, key);
 			fprintf(fic, "%s\n", printBlock(cipher, cipherLengthInByte));
-			if (i%1 == 0) {
+			if (i%100000 == 0) {
 				printf("%lu\t", i);
 				displayResults(clear, cipher, key);
 			}
@@ -248,7 +249,7 @@ int main(int argc, char *argv[]) {
 	switch (argc) {
 		case 2:
 			power = atoi(argv[1]);
-			clearScreen();
+			//clearScreen();
 			iterations = (unsigned long)pow(2, power);
 			testKey();
 			//testAEScipher();

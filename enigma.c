@@ -183,7 +183,7 @@ char *blockToHex(char *block) {
 }
 
 
-void generateFile() {
+void generateFile(void) {
 	params p;
 	int i, j, k, l, m, cpt = 0;
 	char *clear = malloc(blockLen * sizeof(char));
@@ -224,7 +224,7 @@ void generateFile() {
 }
 
 
-void testCipher() {
+void testCipher(void) {
 	params p;
 	char *clear = NULL;
 	char *cipher = NULL;

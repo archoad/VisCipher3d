@@ -18,7 +18,7 @@ endif
 ifeq ($(UNAME_S),Darwin)
 	IFLAGSDIR= -I/opt/local/include
 	LFLAGSDIR= -L/opt/local/lib
-	COMPIL=$(CL)
+	COMPIL=$(CC)
 endif
 GDB_FLAGS= -ggdb
 GL_FLAGS= -lGL -lGLU -lglut
