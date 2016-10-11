@@ -27,13 +27,15 @@ cat cat result.bin | hexdump -C
 #include <math.h>
 #include <time.h>
 #include <openssl/aes.h>
+#include <openssl/rand.h>
 #include <omp.h>
 
 #define couleur(param) printf("\033[%sm",param)
 
+static short randProcess = 0;
 static unsigned long iterations;
 static int clearLengthInByte=0, keyLengthInByte=0, cipherLengthInByte=0;
-static int power;
+static int power=0;
 
 
 
@@ -42,8 +44,9 @@ void usage(void) {
 	couleur("31");
 	printf("Michel Dubois -- AES test key -- (c) 2016\n");
 	couleur("0");
-	printf("Syntaxe: testAESkey <power>\n");
+	printf("Syntaxe: testAESkey <power> <type>\n");
 	printf("\t<power> -> 2^power keys generated\n");
+	printf("\t<type> -> processing type 'rand' or 'incr'\n");
 }
 
 
@@ -103,6 +106,24 @@ void intToSpecialHex(unsigned long val, int nbrOfBytes, unsigned char block[]) {
 	for (i=nbrOfBytes-limit; i>=0; i--) {
 		block[i] = val % 256;
 		val /= 256;
+	}
+	//block[0] = 128;
+}
+
+
+void randToSpecialHex(int nbrOfBytes, unsigned char block[]) {
+	int i=0, cpt=0, limit=4;
+	unsigned char randBytes[nbrOfBytes-limit];
+
+	RAND_bytes(randBytes, sizeof(randBytes));
+	nbrOfBytes = nbrOfBytes-1;
+	for (i=nbrOfBytes; i>=limit; i--) {
+		block[i] = 0;
+	}
+	cpt=0;
+	for (i=nbrOfBytes-limit; i>=0; i--) {
+		block[i] = randBytes[cpt];
+		cpt++;
 	}
 }
 
@@ -171,34 +192,48 @@ void testAEScipher(void) {
 void testKey(void) {
 	clock_t tic, tac;
 	double executionTime = 0.0;
+	int step=0;
 	unsigned long i=0;
 	unsigned char clear[clearLengthInByte];
 	unsigned char key[keyLengthInByte];
 	unsigned char cipher[cipherLengthInByte];
-	FILE *fic = fopen("result.dat", "w");
 
-	if (fic != NULL) {
-		printf("INFO: file create\n");
-		intToHex(0, clearLengthInByte, clear);
-		tic = clock();
-		for (i=0; i<iterations; i++) {
-			intToSpecialHex(i, keyLengthInByte, key);
-			AESencrypt(clear, cipher, key);
-			fprintf(fic, "%s\n", printBlock(cipher, cipherLengthInByte));
-			if (i%100000 == 0) {
-				printf("%lu\t", i);
+	RAND_seed("/dev/urandom", 2048);
+	if (RAND_status()) {
+		FILE *fic = fopen("result.dat", "w");
+		if (fic != NULL) {
+			printf("INFO: file create\n");
+			if (power <= 8) { step=1; } else { step=100000; }
+			intToHex(0, clearLengthInByte, clear);
+			tic = clock();
+			for (i=0; i<iterations; i++) {
+				if (randProcess) {
+					randToSpecialHex(keyLengthInByte, key);
+				} else {
+					intToSpecialHex(i, keyLengthInByte, key);
+				}
+				AESencrypt(clear, cipher, key);
+				fprintf(fic, "%s\n", printBlock(cipher, cipherLengthInByte));
+				if (i%step == 0) {
+					printf("%lu\t", i);
+					displayResults(clear, cipher, key);
+				}
+			}
+			tac = clock();
+			if (step > 1) {
+				printf("%lu\t", i-1);
 				displayResults(clear, cipher, key);
 			}
+			fclose(fic);
+			printf("INFO: file close\n");
+			executionTime = (double)(tac - tic) / CLOCKS_PER_SEC;
+			printf("Execution time: %.8f\n", executionTime);
+		} else {
+			printf("INFO: open error\n");
+			exit(EXIT_FAILURE);
 		}
-		tac = clock();
-		printf("%lu\t", i);
-		displayResults(clear, cipher, key);
-		fclose(fic);
-		printf("INFO: file close\n");
-		executionTime = (double)(tac - tic) / CLOCKS_PER_SEC;
-		printf("Execution time: %.8f\n", executionTime);
 	} else {
-		printf("INFO: open error\n");
+		printf("INFO: random error\n");
 		exit(EXIT_FAILURE);
 	}
 }
@@ -229,31 +264,19 @@ void vectorTest(void) {
 }
 
 
-void testGreatNumber(void) {
-	unsigned long i=0;
-	double power=50.0;
-	double test = pow(2, power);
-
-	for (i=0; i<iterations; i++) {
-		printf("%lu + 2^%0.0f =\t%0.0f\n", i, power, test);
-		test += 1.0f;
-	}
-}
-
-
 int main(int argc, char *argv[]) {
 	clearLengthInByte = 16;
 	keyLengthInByte = 16;
 	cipherLengthInByte = 16;
 
 	switch (argc) {
-		case 2:
+		case 3:
 			power = atoi(argv[1]);
-			//clearScreen();
+			if (!strncmp(argv[2], "rand", 4)) { randProcess = 1; }
+			clearScreen();
 			iterations = (unsigned long)pow(2, power);
 			testKey();
 			//testAEScipher();
-			//testGreatNumber();
 			return(EXIT_SUCCESS);
 			break;
 		default:

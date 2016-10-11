@@ -51,6 +51,8 @@ static float fps = 0.0,
 	zoom = 100.0,
 	prevx = 0.0,
 	prevy = 0.0,
+	alpha = 0.0,
+	pSize = 0.0,
 	sphereRadius = 0.6,
 	squareWidth = 0.055;
 
@@ -58,7 +60,7 @@ static BIGNUM *bn_sum, *bn_average, *bn_max, *bn_min;
 
 typedef struct _point {
 	GLdouble x, y, z;
-	GLfloat r, g, b;
+	GLfloat r, g, b, a;
 } point;
 
 
@@ -66,6 +68,8 @@ static point *pointsList = NULL;
 
 static unsigned long sampleSize = 0,
 	seuil = 60000;
+
+static GLuint textureid = 0;
 
 double maxAll = 0.0;
 
@@ -79,6 +83,19 @@ void usage(void) {
 	printf("\t<filename2> -> file where the second sequence of the AES datas be stored\n");
 	printf("\t\t Both sequences must have the same length.\n");
 	printf("\t<background color> -> 'white' or 'black'\n");
+}
+
+
+double distance(point p1, point p2) {
+	double dx=0.0, dy=0.0, dz=0.0, dist=0.0;
+	dx = p2.x - p1.x;
+	dx = dx * dx;
+	dy = p2.y - p1.y;
+	dy = dy * dy;
+	dz = p2.z - p1.z;
+	dz = dz * dz;
+	dist = sqrt(dx + dy + dz);
+	return(dist);
 }
 
 
@@ -106,9 +123,46 @@ void takeScreenshot(char *filename) {
 }
 
 
+void generateTexture(void) {
+	int w=256, h=256, x=0, y=0, ofset=0;
+	float halfw=0.0, halfh=0.0, xoffset=0.0, yoffsets=0.0, alpha=0.0;
+	unsigned char *pixData = NULL;
+
+	pixData = (unsigned char *)calloc(w*h*4, sizeof(unsigned char));
+	halfw = w/2.0; halfh = h/2.0;
+	for(y=0; y<h; ++y){
+		for(x=0; x<w; ++x){
+			ofset = (x + y*w) * 4;
+			xoffset = ((float)x - halfw) / halfw;
+			yoffsets = ((float)y - halfh) / halfh;
+			alpha = 1.0f - sqrt(xoffset*xoffset + yoffsets*yoffsets);
+			if(alpha < 0.0f) { alpha = 0.0f; }
+			pixData[ofset + 0] = 255; //red
+			pixData[ofset + 1] = 255; //greeen
+			pixData[ofset + 2] = 255; //blue
+			pixData[ofset + 3] = 255.0f * alpha; // alpha
+		}
+	}
+
+	glGenTextures(1, &textureid);
+	glActiveTexture(GL_TEXTURE0);
+	//glEnable(GL_TEXTURE_2D);
+	//glBindTexture(GL_TEXTURE_2D, textureid);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixData);
+	//glEnable(GL_POINT_SPRITE);
+	glTexEnvi(GL_POINT_SPRITE, GL_COORD_REPLACE, GL_TRUE);
+	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	free(pixData);
+}
+
+
 void drawPoint(point p) {
-	glPointSize(1.0);
-	glColor3f(p.r, p.g, p.b);
+	glPointSize(pSize);
+	glColor4f(p.r, p.g, p.b, p.a);
 	glBegin(GL_POINTS);
 	glNormal3f(p.x, p.y, p.z);
 	glVertex3f(p.x, p.y, p.z);
@@ -117,14 +171,14 @@ void drawPoint(point p) {
 
 
 void drawSphere(point p) {
-	glColor3f(p.r, p.g, p.b);
+	glColor4f(p.r, p.g, p.b, p.a);
 	glTranslatef(p.x, p.y, p.z);
 	glutSolidSphere(sphereRadius, 8, 8);
 }
 
 
 void drawSquare(point p) {
-	glColor3f(p.r, p.g, p.b);
+	glColor4f(p.r, p.g, p.b, p.a);
 	glTranslatef(p.x, p.y, p.z);
 	glBegin(GL_QUADS);
 	glVertex3f(-squareWidth, -squareWidth, 0.0); // Bottom left corner
@@ -136,12 +190,16 @@ void drawSquare(point p) {
 
 
 void drawLine(point p1, point p2){
-	glLineWidth(1.0);
+	double d = distance(p1, p2);
+	double dx = p2.x - p1.x;
+	double dy = p2.y - p1.y;
+	double dz = p2.z - p1.z;
+	glLineWidth(pSize);
+	glColor4f(0.6f, 0.6f, 0.6f, alpha);
+	glNormal3f(dx/d, dy/d, dz/d);
 	glBegin(GL_LINES);
-	glColor3f(0.6, 0.6, 0.6);
-	glNormal3f(p1.x, p1.y, p1.z);
-	glVertex3f(p1.x, p1.y, p1.z);
-	glVertex3f(p2.x, p2.y, p2.z);
+		glVertex3f(p1.x, p1.y, p1.z);
+		glVertex3f(p2.x, p2.y, p2.z);
 	glEnd();
 }
 
@@ -249,7 +307,9 @@ void drawObject(void) {
 		glNewList(objectList, GL_COMPILE_AND_EXECUTE);
 		for (i=0; i<sampleSize*2; i++) {
 			glPushMatrix();
-			if (i<sampleSize) drawLine(pointsList[i], pointsList[i+sampleSize]);
+			if (i<sampleSize) {
+				drawLine(pointsList[i], pointsList[i+sampleSize]);
+			}
 			drawSphere(pointsList[i]);
 			glPopMatrix();
 		}
@@ -338,6 +398,7 @@ void onMouse(int button, int state, int x, int y) {
 
 
 void onKeyboard(unsigned char key, int x, int y) {
+	unsigned long i = 0;
 	char *name = malloc(20 * sizeof(char));
 	switch (key) {
 		case 27: // Escape
@@ -363,13 +424,26 @@ void onKeyboard(unsigned char key, int x, int y) {
 			break;
 		case 'f':
 			fullScreen = !fullScreen;
+			printf("INFO: fullscreen %d\n", fullScreen);
 			if (fullScreen) {
 				glutFullScreen();
 			} else {
+				glutPositionWindow(120,10);
 				glutReshapeWindow(winSizeW, winSizeH);
-				glutPositionWindow(100,100);
-				printf("INFO: fullscreen %d\n", fullScreen);
 			}
+			break;
+		case 'a':
+			alpha -= 0.05;
+			if (alpha <= 0) { alpha = 1.0; }
+			for (i=0; i<sampleSize*2; i++) {
+				pointsList[i].a = alpha;
+			}
+			printf("INFO: alpha channel %f\n", alpha);
+			break;
+		case 's':
+			pSize += 1.0;
+			if (pSize >= 20) { pSize = 0.5; }
+			printf("INFO: point size %f\n", pSize);
 			break;
 		case 'r':
 			rotate = !rotate;
@@ -420,7 +494,6 @@ void onTimer(int event) {
 
 void display(void) {
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
 
@@ -445,10 +518,11 @@ void display(void) {
 
 	drawAxes();
 	if (sampleSize >= seuil) {
+		glPointSize(pSize);
 		glEnableClientState(GL_VERTEX_ARRAY);
 		glEnableClientState(GL_COLOR_ARRAY);
 		glVertexPointer(3, GL_DOUBLE, 2*sizeof(point), pointsList);
-		glColorPointer(3, GL_FLOAT, 2*sizeof(point), &pointsList[0].r);
+		glColorPointer(4, GL_FLOAT, 2*sizeof(point), &pointsList[0].r);
 		glDrawArrays(GL_POINTS, 0, sampleSize);
 		glDisableClientState(GL_COLOR_ARRAY);
 		glDisableClientState(GL_VERTEX_ARRAY);
@@ -457,8 +531,8 @@ void display(void) {
 	}
 	glPopMatrix();
 
-	glutSwapBuffers();
 	glutPostRedisplay();
+	glutSwapBuffers();
 }
 
 
@@ -496,14 +570,22 @@ void init(void) {
 	glLightModelfv(GL_LIGHT_MODEL_AMBIENT, baseAmbient);
 	glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, GL_TRUE);
 
-	glShadeModel(GL_SMOOTH);
+	// points smoothing
+	glEnable(GL_POINT_SMOOTH);
+	glHint(GL_POINT_SMOOTH_HINT, GL_NICEST);
+
+	//needed for transparency
 	glEnable(GL_DEPTH_TEST);
-
-	glEnable(GL_NORMALIZE);
-	glEnable(GL_AUTO_NORMAL);
 	glDepthFunc(GL_LESS);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-	glDisable(GL_CULL_FACE);
+	glShadeModel(GL_SMOOTH); // smooth shading
+	glEnable(GL_NORMALIZE); // recalc normals for non-uniform scaling
+	glEnable(GL_AUTO_NORMAL);
+
+	glEnable(GL_CULL_FACE); // do not render back-faces, faster
+
 	drawObject();
 }
 
@@ -514,7 +596,6 @@ void glmain(int argc, char *argv[]) {
 	glutInitWindowSize(winSizeW, winSizeH);
 	glutInitWindowPosition(120, 10);
 	glutCreateWindow(WINDOW_TITLE_PREFIX);
-	init();
 	glutDisplayFunc(display);
 	glutReshapeFunc(onReshape);
 	glutSpecialFunc(onSpecial);
@@ -523,6 +604,7 @@ void glmain(int argc, char *argv[]) {
 	glutMouseFunc(onMouse);
 	glutKeyboardFunc(onKeyboard);
 	glutTimerFunc(dt, onTimer, 0);
+	init();
 	fprintf(stdout, "INFO: OpenGL Version: %s\n", glGetString(GL_VERSION));
 	fprintf(stdout, "INFO: FreeGLUT Version: %d\n", glutGet(GLUT_VERSION));
 	glutSetOption(GLUT_ACTION_ON_WINDOW_CLOSE, GLUT_ACTION_GLUTMAINLOOP_RETURNS);
@@ -613,6 +695,7 @@ void populatePoints(BIGNUM *tab[]) {
 	for (i=0; i<sampleSize*2; i++) {
 		if ( i %sampleSize == 0) { hue = (double)rand() / (double)RAND_MAX; }
 		hsv2rgb(hue, 1.0, 1.0, &(pointsList[i].r), &(pointsList[i].g), &(pointsList[i].b));
+		pointsList[i].a = alpha;
 		BN_add(bn_sum, bn_sum, tab[i]);
 		if (i>=3) {
 			BN_sub(bn_x, tab[i-3], tab[i-2]);
@@ -716,9 +799,9 @@ void playFile(int argc, char *argv[]) {
 int main(int argc, char *argv[]) {
 	switch (argc) {
 		case 4:
-			if (!strncmp(argv[3], "white", 5)) {
-				background = 1;
-			}
+			if (!strncmp(argv[3], "white", 5)) { background = 1; }
+			alpha = 1.0f;
+			pSize = 1.0f;
 			sampleSize = countFileLines(argv[1]);
 			if (countFileLines(argv[2]) != sampleSize) {
 				usage();

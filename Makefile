@@ -25,6 +25,7 @@ GL_FLAGS= -lGL -lGLU -lglut
 MATH_FLAGS= -lm
 CRYPTO_FLAGS= -lcrypto
 PNG_FLAGS= -lpng
+FFTW_FLAGS = -lfftw3
 
 all: dest_sys visCipherCmp3d visCipher3d cipher testAESkey vigenere enigma
 
@@ -33,7 +34,7 @@ visCipherCmp3d: visCipherCmp3d.c
 	@$(STRIP) $@
 
 visCipher3d: visCipher3d.c
-	$(COMPIL) $(CFLAGS) $(IFLAGSDIR) $(LFLAGSDIR) $(MATH_FLAGS) $(GL_FLAGS) $(PNG_FLAGS) $(CRYPTO_FLAGS) $< -o $@
+	$(COMPIL) $(CFLAGS) $(IFLAGSDIR) $(LFLAGSDIR) $(FFTW_FLAGS) $(MATH_FLAGS) $(GL_FLAGS) $(PNG_FLAGS) $(CRYPTO_FLAGS) $< -o $@
 	@$(STRIP) $@
 
 cipher: cipher.c
