@@ -31,11 +31,13 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301, USA.*/
 #include <openssl/sha.h>
 
 #define couleur(param) printf("\033[%sm",param)
-
+#define AES_INSTRCTIONS_CPUID_BIT (1<<25)
 
 static unsigned long iterations;
 static int clearLengthInByte=0, keyLengthInByte=0, cipherLengthInByte=0;
 static int algo = 0;
+
+
 
 
 void usage(void) {

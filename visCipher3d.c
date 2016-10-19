@@ -43,7 +43,6 @@ static short winSizeW = 920,
 	dt = 5; // in milliseconds
 
 static int textList = 0,
-	objectList = 0,
 	fftList =0,
 	cpt = 0,
 	background = 0,
@@ -60,8 +59,7 @@ static float fps = 0.0,
 	prevy = 0.0,
 	alpha = 0.0,
 	pSize = 0.0,
-	hilbertWidth = 1.5, hilbertHeight = 1.5,
-	sphereRadius = 0.6;
+	hilbertWidth = 1.5, hilbertHeight = 1.5;
 
 static double xMax = 0, yMax = 0, zMax = 0,
 	minAll = 0, maxAll = 0,
@@ -81,12 +79,11 @@ typedef struct _point {
 
 static point pointsList[MAXSAMPLE];
 static point hilbertPointList[MAXSAMPLE];
-static point fftPointList[MAXSAMPLE*2];
+static point fftPointList[MAXSAMPLE];
 
 static unsigned long sampleSize = 0,
 	fftN = 0,
-	hilbertSize = 0,
-	seuil = 60000;
+	hilbertSize = 0;
 
 
 void usage(void) {
@@ -191,51 +188,6 @@ double calculateMinTab(void) {
 }
 
 
-void drawPoint(point p) {
-	glPointSize(pSize);
-	glColor4f(p.r, p.g, p.b, p.a);
-	glBegin(GL_POINTS);
-	glNormal3f(p.x, p.y, p.z);
-	glVertex3f(p.x, p.y, p.z);
-	glEnd();
-}
-
-
-void drawSphere(point p) {
-	glColor4f(p.r, p.g, p.b, p.a);
-	glTranslatef(p.x, p.y, p.z);
-	glutSolidSphere(sphereRadius, 8, 8);
-}
-
-
-void drawSquare(float x, float y, float z, float width) {
-	glColor3f(0.8, 0.8, 0.8);
-	glTranslatef(x, y, z);
-	glBegin(GL_QUADS);
-		glVertex3f(-width, -width, z); // Bottom left corner
-		glVertex3f(-width, width, z); // Top left corner
-		glVertex3f(width, width, z); // Top right corner
-		glVertex3f(width, -width, z); // Bottom right corner
-	glEnd();
-}
-
-
-void drawLine(point p1, point p2){
-	double d = distance(p1, p2);
-	double dx = p2.x - p1.x;
-	double dy = p2.y - p1.y;
-	double dz = p2.z - p1.z;
-	glLineWidth(pSize);
-	glNormal3f(dx/d, dy/d, dz/d);
-	glBegin(GL_LINES);
-		glColor4f(p1.r, p1.g, p1.b, p1.a);
-		glVertex3f(p1.x, p1.y, p1.z);
-		glColor4f(p2.r, p2.g, p2.b, p2.a);
-		glVertex3f(p2.x, p2.y, p2.z);
-	glEnd();
-}
-
-
 void drawString(float x, float y, float z, char *text) {
 	unsigned i = 0;
 	glPushMatrix();
@@ -332,22 +284,6 @@ void drawAxes(void) {
 }
 
 
-void drawObject(void) {
-	unsigned long i;
-	if (sampleSize <= seuil) {
-		objectList = glGenLists(1);
-		glNewList(objectList, GL_COMPILE_AND_EXECUTE);
-		for (i=0; i<sampleSize; i++) {
-			glPushMatrix();
-			//drawLine(pointsList[i-1], pointsList[i]);
-			drawSphere(pointsList[i]);
-			glPopMatrix();
-		}
-		glEndList();
-	}
-}
-
-
 void drawFFTAxes(void) {
 	int i=0, midx=fftWidthx/2, midy=fftWidthy;
 	double val=0;
@@ -370,8 +306,8 @@ void drawFFTAxes(void) {
 		sprintf(text, "%0.0f", val);
 		drawString(i-midx-0.05, -midy-0.30, -fftDepth, text);
 		glBegin(GL_LINES);
-			glVertex3f(val, -midy-0.15, -fftDepth);
-			glVertex3f(val, -midy-0.10, -fftDepth);
+			glVertex3f(i-midx, -midy-0.15, -fftDepth);
+			glVertex3f(i-midx, -midy-0.10, -fftDepth);
 		glEnd();
 	}
 	for (i=0; i<=fftWidthy; i++) {
@@ -379,8 +315,8 @@ void drawFFTAxes(void) {
 		sprintf(text, "%1.1e", val);
 		drawString(-midx-0.80, i-midy-0.05, -fftDepth, text);
 		glBegin(GL_LINES);
-			glVertex3f(-midx-0.15, val, -fftDepth);
-			glVertex3f(-midx-0.10, val, -fftDepth);
+			glVertex3f(-midx-0.15, i-midy, -fftDepth);
+			glVertex3f(-midx-0.10, i-midy, -fftDepth);
 		glEnd();
 	}
 	glPopMatrix();
@@ -531,7 +467,6 @@ void onKeyboard(unsigned char key, int x, int y) {
 			for (i=0; i<sampleSize; i++) {
 				pointsList[i].a = alpha;
 			}
-			drawObject();
 			printf("INFO: alpha channel %f\n", alpha);
 			break;
 		case 's':
@@ -629,18 +564,16 @@ void display(void) {
 	glEnable(GL_LIGHT1);
 
 	drawAxes();
-	if (sampleSize >= seuil) {
-		glPointSize(pSize);
-		glEnableClientState(GL_VERTEX_ARRAY);
-		glEnableClientState(GL_COLOR_ARRAY);
-		glVertexPointer(3, GL_DOUBLE, sizeof(point), pointsList);
-		glColorPointer(4, GL_FLOAT, sizeof(point), &pointsList[0].r);
-		glDrawArrays(GL_POINTS, 0, sampleSize);
-		glDisableClientState(GL_COLOR_ARRAY);
-		glDisableClientState(GL_VERTEX_ARRAY);
-	} else {
-		glCallList(objectList);
-	}
+
+	glPointSize(pSize);
+	glEnableClientState(GL_VERTEX_ARRAY);
+	glEnableClientState(GL_COLOR_ARRAY);
+	glVertexPointer(3, GL_DOUBLE, sizeof(point), pointsList);
+	glColorPointer(4, GL_FLOAT, sizeof(point), &pointsList[0].r);
+	glDrawArrays(GL_POINTS, 0, sampleSize);
+	glDisableClientState(GL_COLOR_ARRAY);
+	glDisableClientState(GL_VERTEX_ARRAY);
+
 	glPopMatrix();
 
 	glutPostRedisplay();
@@ -698,7 +631,6 @@ void init(void) {
 
 	glEnable(GL_CULL_FACE); // do not render back-faces, faster
 
-	drawObject();
 	drawFFTAxes();
 }
 
@@ -724,7 +656,6 @@ void glmain(int argc, char *argv[]) {
 	glutMainLoop();
 	fprintf(stdout, "INFO: Freeing memory\n");
 	glDeleteLists(textList, 1);
-	glDeleteLists(objectList, 1);
 	glDeleteLists(fftList, 1);
 }
 
@@ -796,7 +727,7 @@ void colorizeHilbert(void) {
 			hue = current / maxAll;
 			hsv2rgb(hue, 0.8, 1.0, &(hilbertPointList[i].r), &(hilbertPointList[i].g), &(hilbertPointList[i].b));
 		} else {
-			hsv2rgb(1.0, 0.0, 1.0, &(hilbertPointList[i].r), &(hilbertPointList[i].g), &(hilbertPointList[i].b));
+			hsv2rgb(0.0, 0.1, 0.1, &(hilbertPointList[i].r), &(hilbertPointList[i].g), &(hilbertPointList[i].b));
 		}
 	}
 }
@@ -880,6 +811,7 @@ void populatePoints(void) {
 	unsigned long i;
 	double x = 0, y = 0, z = 0, hue = 0;
 	printf("INFO: Compute point list\n");
+	srand(time(NULL));
 
 	xMax=0; yMax=0; zMax=0;
 	if (mono) { hue = (double)rand() / (double)(RAND_MAX - 1); }
@@ -986,7 +918,6 @@ void playFile(int argc, char *argv[]) {
 		populateHilbert();
 		populateFFT();
 		glmain(argc, argv);
-		//printf("%d -> %s\n", argc, argv[0]);
 	} else {
 		printf("### ERROR open file error\n");
 		exit(EXIT_FAILURE);
