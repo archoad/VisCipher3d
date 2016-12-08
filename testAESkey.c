@@ -52,7 +52,7 @@ void usage(void) {
 
 
 void clearScreen(void) {
-	printf("\x1b[2J\x1b[1;1H");
+	printf("\x1b[2J\x1b[1;1H\n");
 }
 
 
@@ -81,6 +81,16 @@ unsigned int swap32bitsBlock(unsigned int val) {
 		((val>>8)&0xff00) | // move byte 2 to byte 1
 		((val<<24)&0xff000000)
 	);
+}
+
+
+double mean(int m, double data[]) {
+	int i = 0;
+	double result = 0.0;
+	for (i=0; i<m; i++) {
+		result += data[i];
+	}
+	return(result / (double)m);
 }
 
 
@@ -126,7 +136,7 @@ void intToHex(unsigned long val, int nbrOfBytes, unsigned char block[]) {
 }
 
 
-void intToSpecialHexDecal(int limit, unsigned long val, int nbrOfBytes, unsigned char block[]) {
+void intToSpecialHex(int limit, unsigned long val, int nbrOfBytes, unsigned char block[]) {
 	// limit is the decal value in byte
 	int i=0;
 	nbrOfBytes = nbrOfBytes-1;
@@ -136,19 +146,6 @@ void intToSpecialHexDecal(int limit, unsigned long val, int nbrOfBytes, unsigned
 	for (i=nbrOfBytes-limit; i>=0; i--) {
 		block[i] = val % 256;
 		val /= 256;
-	}
-}
-
-
-void intToSpecialHexEnd(unsigned long val, int nbrOfBytes, unsigned char block[]) {
-	int i=0, limit=4;
-	nbrOfBytes = nbrOfBytes-1;
-	for (i=nbrOfBytes; i>=limit; i--) {
-		block[i] = val % 256;
-		val /= 256;
-	}
-	for (i=nbrOfBytes-limit; i>=0; i--) {
-		block[i] = 0;
 	}
 }
 
@@ -260,31 +257,38 @@ void AESdisplayExpansionCipherKey(unsigned char key[]) {
 }
 
 
-void testAEScipher(void) {
+void testAEScipher(short full, int nbrRound) {
 	int maxTest=8, curTest=0;
 	clock_t tic[maxTest], tac[maxTest];
-	double execTime[maxTest];
+	double execTime[maxTest], m=0;
 	unsigned long i=0;
 	unsigned char clear[clearLengthInByte];
 	unsigned char key[keyLengthInByte];
 	unsigned char cipher[cipherLengthInByte];
+	FILE *fic = fopen("time.dat", "a");
 
 	initBlock(key, keyLengthInByte, "80000000000000000000000000000000");
 	intToHex(0, clearLengthInByte, clear);
 	for (curTest=0; curTest<maxTest; curTest++) {
 		tic[curTest] = clock();
 		for (i=0; i<iterations; i++) {
-			AESencrypt(clear, cipher, key);
-			//AESencryptByRound(clear, cipher, key, 1);
+			if (full) {
+				AESencrypt(clear, cipher, key);
+			} else {
+				AESencryptByRound(clear, cipher, key, nbrRound);
+			}
 		}
 		tac[curTest] = clock();
 	}
-	printf("2^%d=%lu iterations.\nExecution time: ", power, iterations);
+	printf("2^%d=%lu iterations.\n", power, iterations);
 	for (curTest=0; curTest<maxTest; curTest++) {
 		execTime[curTest] = (double)(tac[curTest] - tic[curTest]) / CLOCKS_PER_SEC;
-		printf("%.8f\t", execTime[curTest]);
+		printf("%.8f ", execTime[curTest]);
 	}
-	printf("\n");
+	m = mean(maxTest, execTime);
+	printf(" (mean: %.8f)\n", m);
+	fprintf(fic, "%lu %.8f\n", iterations, m);
+	fclose(fic);
 }
 
 
@@ -315,12 +319,7 @@ void testKey(void) {
 				if (randProcess) {
 					randToSpecialHex(keyLengthInByte, key);
 				} else {
-					if (roundNbr) {
-						//intToSpecialHexEnd(i, keyLengthInByte, key);
-						intToSpecialHexDecal(12, i, keyLengthInByte, key);
-					} else {
-						intToSpecialHexDecal(4, i, keyLengthInByte, key);
-					}
+					intToSpecialHex(12, i, keyLengthInByte, key);
 				}
 				if (roundNbr) {
 					AESencryptByRound(clear, cipher, key, roundNbr);
@@ -392,7 +391,8 @@ int main(int argc, char *argv[]) {
 		case 2:
 			power = atoi(argv[1]);
 			iterations = (unsigned long)pow(2, power);
-			testAEScipher();
+			clearScreen();
+			testAEScipher(1, 0);
 			return(EXIT_SUCCESS);
 			break;
 		case 3:
