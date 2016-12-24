@@ -37,22 +37,28 @@ cat cat result.bin | hexdump -C
 static short randProcess=0;
 static unsigned long iterations;
 static int clearLengthInByte=0, keyLengthInByte=0, cipherLengthInByte=0;
-static int power=0, roundNbr=0;
+static int power=0, roundNbr=0, decal=0;
 
 
 void usage(void) {
 	couleur("31");
 	printf("Michel Dubois -- AES test key -- (c) 2016\n");
 	couleur("0");
-	printf("Syntaxe: testAESkey <power> <type> <round>\n");
-	printf("\t<power> -> 2^power keys generated\n");
-	printf("\t<type> -> processing type 'rand', 'incr'\n");
-	printf("\t<round> -> number of rounds 0 >= r >= 10\n");
+	printf("Syntaxe:\n");
+	printf("\tWith 1 argument (speed tests): testAESkey <power>\n");
+	printf("\t\t<power> -> 2^power keys generated\n");
+	printf("\tWith 2 argument (full encryption tests): testAESkey <power> <type>\n");
+	printf("\t\t<power> -> 2^power keys generated\n");
+	printf("\t\t<type> -> key processing type 'rand', 'incr'\n");
+	printf("\tWith 3 argument (partial encryption tests): testAESkey <power> <decal> <round>\n");
+	printf("\t\t<power> -> 2^power keys generated\n");
+	printf("\t\t<decal> -> value for decalage of bytes\n");
+	printf("\t\t<round> -> number of rounds 0 >= r >= 10\n");
 }
 
 
 void clearScreen(void) {
-	printf("\x1b[2J\x1b[1;1H\n");
+	printf("\x1b[2J\x1b[1;1H");
 }
 
 
@@ -150,8 +156,9 @@ void intToSpecialHex(int limit, unsigned long val, int nbrOfBytes, unsigned char
 }
 
 
-void randToSpecialHex(int nbrOfBytes, unsigned char block[]) {
-	int i=0, cpt=0, limit=4;
+void randToSpecialHex(int limit, int nbrOfBytes, unsigned char block[]) {
+	// limit is the decal value in byte
+	int i=0, cpt=0;
 	unsigned char randBytes[nbrOfBytes-limit];
 
 	RAND_bytes(randBytes, sizeof(randBytes));
@@ -292,7 +299,7 @@ void testAEScipher(short full, int nbrRound) {
 }
 
 
-void testKey(void) {
+void fullKeyExpansionTest(void) {
 	clock_t tic, tac;
 	double executionTime = 0.0;
 	int step=0;
@@ -302,9 +309,7 @@ void testKey(void) {
 	unsigned char cipher[cipherLengthInByte];
 
 	couleur("31");
-	printf("\nAES tests: 2^%d=%lu iterations, ", power, iterations);
-	if (randProcess) { printf("random key"); } else { printf("incremental key"); }
-	if (roundNbr) { printf(", number of rounds %d\n", roundNbr); } else { printf("\n"); }
+	printf("\nAES tests: 2^%d=%lu iterations\n", power, iterations);
 	couleur("0");
 
 	RAND_seed("/dev/urandom", 2048);
@@ -317,15 +322,11 @@ void testKey(void) {
 			tic = clock();
 			for (i=0; i<iterations; i++) {
 				if (randProcess) {
-					randToSpecialHex(keyLengthInByte, key);
+					randToSpecialHex(decal, keyLengthInByte, key);
 				} else {
-					intToSpecialHex(12, i, keyLengthInByte, key);
+					intToSpecialHex(decal, i, keyLengthInByte, key);
 				}
-				if (roundNbr) {
-					AESencryptByRound(clear, cipher, key, roundNbr);
-				} else {
-					AESencrypt(clear, cipher, key);
-				}
+				AESencrypt(clear, cipher, key);
 				fprintf(fic, "%s\n", printBlock(cipher, cipherLengthInByte));
 				if (i%step == 0) {
 					printf("%lu\t", i);
@@ -352,6 +353,55 @@ void testKey(void) {
 }
 
 
+void partialKeyExpansionTest(void) {
+	clock_t tic, tac;
+	double executionTime = 0.0;
+	int step=0;
+	unsigned long i=0;
+	unsigned char clear[clearLengthInByte];
+	unsigned char key[keyLengthInByte];
+	unsigned char cipher[cipherLengthInByte];
+
+	couleur("31");
+	printf("\nAES tests: 2^%d=%lu iterations, number of rounds %d\n", power, iterations, roundNbr);
+	couleur("0");
+
+	FILE *fic = fopen("result.dat", "w");
+	FILE *foctave = fopen("analyse.dat", "w");
+	if ((fic != NULL) && (foctave != NULL)) {
+		printf("INFO: file create\n");
+		fprintf(foctave, "# Created by MyShell\n# name: data\n# type: cell\n# rows: %lu\n# columns: 1\n", iterations);
+		if (power <= 8) { step=1; } else { step=100000; }
+		intToHex(0, clearLengthInByte, clear);
+		tic = clock();
+		for (i=0; i<iterations; i++) {
+			intToSpecialHex(decal, i, keyLengthInByte, key);
+			AESencryptByRound(clear, cipher, key, roundNbr);
+			fprintf(fic, "%s\n", printBlock(cipher, cipherLengthInByte));
+			fprintf(foctave, "# name: <cell-element>\n# type: sq_string\n# elements: 1\n# length: 32\n");
+			fprintf(foctave, "%s\n\n\n", printBlock(cipher, cipherLengthInByte));
+			if (i%step == 0) {
+				printf("%lu\t", i);
+				displayResults(clear, cipher, key);
+			}
+		}
+		tac = clock();
+		if (step > 1) {
+			printf("%lu\t", i-1);
+			displayResults(clear, cipher, key);
+		}
+		fclose(fic);
+		fclose(foctave);
+		printf("INFO: file close\n");
+		executionTime = (double)(tac - tic) / CLOCKS_PER_SEC;
+		printf("Execution time: %.8f\n", executionTime);
+	} else {
+		printf("INFO: file creation error\n");
+		exit(EXIT_FAILURE);
+	}
+}
+
+
 void vectorTest(void) {
 	unsigned char clear[clearLengthInByte];
 	unsigned char key[keyLengthInByte];
@@ -367,17 +417,7 @@ void vectorTest(void) {
 	displayResults(clear, cipher, key);
 	AESencryptByRound(clear, cipher, key, 10);
 	displayResults(clear, cipher, key);
-
 	printf("Normal result: 3925841d02dc09fbdc118597196a0b32\n");
-	AESdisplayExpansionCipherKey(key);
-
-	initBlock(clear, clearLengthInByte, "00112233445566778899aabbccddeeff");
-	initBlock(key, keyLengthInByte, "000102030405060708090a0b0c0d0e0f");
-	AESencrypt(clear, cipher, key);
-	displayResults(clear, cipher, key);
-	AESencryptByRound(clear, cipher, key, 10);
-	displayResults(clear, cipher, key);
-	printf("Normal result: 69c4e0d86a7b0430d8cdb78070b4c55a\n");
 	AESdisplayExpansionCipherKey(key);
 }
 
@@ -400,21 +440,57 @@ int main(int argc, char *argv[]) {
 			iterations = (unsigned long)pow(2, power);
 			if (!strncmp(argv[2], "rand", 4)) { randProcess = 1; }
 			clearScreen();
-			testKey();
+			fullKeyExpansionTest();
 			return(EXIT_SUCCESS);
 			break;
 		case 4:
 			power = atoi(argv[1]);
+			decal = atoi(argv[2]);
 			roundNbr = atoi(argv[3]);
 			iterations = (unsigned long)pow(2, power);
 			clearScreen();
-			testKey();
+			partialKeyExpansionTest();
 			return(EXIT_SUCCESS);
 			break;
 		default:
+			clearScreen();
 			usage();
 			vectorTest();
 			exit(EXIT_FAILURE);
 			break;
 	}
 }
+
+
+/*
+https://fr.mathworks.com/matlabcentral/answers/197246-finding-duplicate-strings-in-a-cell-array-and-their-index
+GNU octave analyse
+
+tic
+load analyse.dat
+[D,~,X] = unique(data);
+Y = histc(X,unique(X));
+Z = struct('name',D,'freq',num2cell(Y));
+toc
+
+Z(2).freq
+ans =  3
+
+Z(2).name
+ans = 010000011e1f213f0100000101000001
+
+
+
+
+tic
+load analyse.dat
+[D,~,X] = unique(data);
+[n, bin] = histc(X,unique(X));
+multiple = find(n > 1);
+index = find(ismember(bin, multiple));
+index
+toc
+
+
+
+*/
