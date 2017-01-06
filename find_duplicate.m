@@ -1,3 +1,5 @@
+#! /opt/local/bin/octave-cli -qf
+
 clear all;
 
 printf('Data analysis\n');
