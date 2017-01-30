@@ -18,7 +18,11 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301, USA.*/
 /* Using openSSL in command Line:
 python -c "print(bytearray.fromhex('6bc1bee22e409f96e93d7e117393172a').decode())" > plaintext.bin
 echo -n 'Attack at dawn!!' | openssl enc -v -aes-128-ecb -K 01000000000000000000000000000000 -nosalt -nopad -out result.bin
-cat cat result.bin | hexdump -C
+cat result.bin | hexdump -C
+
+Searching collisions
+sort -u result_0.dat > uniquely_sorted.dat
+wc -l uniquely_sorted.dat result_0.dat
 */
 
 #include <stdlib.h>
@@ -37,7 +41,7 @@ cat cat result.bin | hexdump -C
 static short randProcess=0;
 static unsigned long iterations;
 static int clearLengthInByte=0, keyLengthInByte=0, cipherLengthInByte=0;
-static int power=0, roundNbr=0, decal=0;
+static int verbose=0, power=0, roundNbr=0, decal=0, schema=0;
 
 
 void usage(void) {
@@ -54,6 +58,11 @@ void usage(void) {
 	printf("\t\t<power> -> 2^power keys generated\n");
 	printf("\t\t<decal> -> value for decalage of bytes\n");
 	printf("\t\t<round> -> number of rounds 0 >= r >= 10\n");
+	printf("\tWith 4 argument (partial encryption tests): testAESkey <power> <decal> <round> <schema>\n");
+	printf("\t\t<power> -> 2^power keys generated\n");
+	printf("\t\t<decal> -> value for decalage of bytes\n");
+	printf("\t\t<round> -> number of rounds 0 >= r >= 10\n");
+	printf("\t\t<schema> -> schema of key padding 0 >= s >= 255\n");
 }
 
 
@@ -120,8 +129,7 @@ void initBlock(unsigned char block[], int nbrOfBytes, char *value) {
 }
 
 
-char* printBlock(unsigned char block[], int nbrOfBytes) {
-	char *result = calloc((nbrOfBytes*2)+1, sizeof(char));
+char* printBlock(unsigned char block[], int nbrOfBytes, char result[]) {
 	result[nbrOfBytes*2] = '\0';
 	int i=0, j=0;
 	for (i=0; i<nbrOfBytes; i++) {
@@ -147,9 +155,9 @@ void intToSpecialHex(int limit, unsigned long val, int nbrOfBytes, unsigned char
 	int i=0;
 	nbrOfBytes = nbrOfBytes-1;
 	for (i=nbrOfBytes; i>=limit; i--) {
-		block[i] = 0;
+		block[i] = schema;
 	}
-	for (i=nbrOfBytes-limit; i>=0; i--) {
+	for (i=limit-1; i>=0; i--) {
 		block[i] = val % 256;
 		val /= 256;
 	}
@@ -167,7 +175,7 @@ void randToSpecialHex(int limit, int nbrOfBytes, unsigned char block[]) {
 		block[i] = 0;
 	}
 	cpt=0;
-	for (i=nbrOfBytes-limit; i>=0; i--) {
+	for (i=limit-1; i>=0; i--) {
 		block[i] = randBytes[cpt];
 		cpt++;
 	}
@@ -185,10 +193,13 @@ void hexDump(FILE *fd, char *title, unsigned char *s, int length) {
 
 
 void displayResults(unsigned char clear[], unsigned char cipher[], unsigned char key[]) {
+	char resultClear[(clearLengthInByte*2)+1];
+	char resultKey[(keyLengthInByte*2)+1];
+	char resultCipher[(cipherLengthInByte*2)+1];
 	printf("Clear: %s,\tKey: %s,\tCipher: %s\n",
-		printBlock(clear, clearLengthInByte),
-		printBlock(key, keyLengthInByte),
-		printBlock(cipher, cipherLengthInByte));
+		printBlock(clear, clearLengthInByte, resultClear),
+		printBlock(key, keyLengthInByte, resultKey),
+		printBlock(cipher, cipherLengthInByte, resultCipher));
 }
 
 
@@ -307,6 +318,7 @@ void fullKeyExpansionTest(void) {
 	unsigned char clear[clearLengthInByte];
 	unsigned char key[keyLengthInByte];
 	unsigned char cipher[cipherLengthInByte];
+	char resultCipher[(cipherLengthInByte*2)+1];
 
 	couleur("31");
 	printf("\nAES tests: 2^%d=%lu iterations\n", power, iterations);
@@ -316,7 +328,6 @@ void fullKeyExpansionTest(void) {
 	if (RAND_status()) {
 		FILE *fic = fopen("result.dat", "w");
 		if (fic != NULL) {
-			printf("INFO: file create\n");
 			if (power <= 8) { step=1; } else { step=100000; }
 			intToHex(0, clearLengthInByte, clear);
 			tic = clock();
@@ -327,7 +338,7 @@ void fullKeyExpansionTest(void) {
 					intToSpecialHex(decal, i, keyLengthInByte, key);
 				}
 				AESencrypt(clear, cipher, key);
-				fprintf(fic, "%s\n", printBlock(cipher, cipherLengthInByte));
+				fprintf(fic, "%s\n", printBlock(cipher, cipherLengthInByte, resultCipher));
 				if (i%step == 0) {
 					printf("%lu\t", i);
 					displayResults(clear, cipher, key);
@@ -339,7 +350,6 @@ void fullKeyExpansionTest(void) {
 				displayResults(clear, cipher, key);
 			}
 			fclose(fic);
-			printf("INFO: file close\n");
 			executionTime = (double)(tac - tic) / CLOCKS_PER_SEC;
 			printf("Execution time: %.8f\n", executionTime);
 		} else {
@@ -358,41 +368,37 @@ void partialKeyExpansionTest(void) {
 	double executionTime = 0.0;
 	int step=0;
 	unsigned long i=0;
+	char nameResult[20];
 	unsigned char clear[clearLengthInByte];
 	unsigned char key[keyLengthInByte];
 	unsigned char cipher[cipherLengthInByte];
+	char resultCipher[(cipherLengthInByte*2)+1];
 
 	couleur("31");
 	printf("\nAES tests: 2^%d=%lu iterations, number of rounds %d\n", power, iterations, roundNbr);
 	couleur("0");
 
-	FILE *fic = fopen("result.dat", "w");
-	FILE *foctave = fopen("analyse.dat", "w");
-	if ((fic != NULL) && (foctave != NULL)) {
-		printf("INFO: file create\n");
-		fprintf(foctave, "# Created by MyShell\n# name: data\n# type: cell\n# rows: %lu\n# columns: 1\n", iterations);
+	sprintf(nameResult, "result_%d.dat", schema);
+	FILE *fic = fopen(nameResult, "w");
+	if (fic != NULL) {
 		if (power <= 8) { step=1; } else { step=100000; }
 		intToHex(0, clearLengthInByte, clear);
 		tic = clock();
 		for (i=0; i<iterations; i++) {
 			intToSpecialHex(decal, i, keyLengthInByte, key);
 			AESencryptByRound(clear, cipher, key, roundNbr);
-			fprintf(fic, "%s\n", printBlock(cipher, cipherLengthInByte));
-			fprintf(foctave, "# name: <cell-element>\n# type: sq_string\n# elements: 1\n# length: 32\n");
-			fprintf(foctave, "%s\n\n\n", printBlock(cipher, cipherLengthInByte));
-			if (i%step == 0) {
+			fprintf(fic, "%s\n", printBlock(cipher, cipherLengthInByte, resultCipher));
+			if ((verbose) && (i%step == 0)) {
 				printf("%lu\t", i);
 				displayResults(clear, cipher, key);
 			}
 		}
 		tac = clock();
-		if (step > 1) {
+		if ((verbose) && (step > 1)) {
 			printf("%lu\t", i-1);
 			displayResults(clear, cipher, key);
 		}
 		fclose(fic);
-		fclose(foctave);
-		printf("INFO: file close\n");
 		executionTime = (double)(tac - tic) / CLOCKS_PER_SEC;
 		printf("Execution time: %.8f\n", executionTime);
 	} else {
@@ -436,6 +442,7 @@ int main(int argc, char *argv[]) {
 			return(EXIT_SUCCESS);
 			break;
 		case 3:
+			decal = 16;
 			power = atoi(argv[1]);
 			iterations = (unsigned long)pow(2, power);
 			if (!strncmp(argv[2], "rand", 4)) { randProcess = 1; }
@@ -447,6 +454,16 @@ int main(int argc, char *argv[]) {
 			power = atoi(argv[1]);
 			decal = atoi(argv[2]);
 			roundNbr = atoi(argv[3]);
+			iterations = (unsigned long)pow(2, power);
+			clearScreen();
+			partialKeyExpansionTest();
+			return(EXIT_SUCCESS);
+			break;
+		case 5:
+			power = atoi(argv[1]);
+			decal = atoi(argv[2]);
+			roundNbr = atoi(argv[3]);
+			schema = atoi(argv[4]);
 			iterations = (unsigned long)pow(2, power);
 			clearScreen();
 			partialKeyExpansionTest();
@@ -466,30 +483,24 @@ int main(int argc, char *argv[]) {
 https://fr.mathworks.com/matlabcentral/answers/197246-finding-duplicate-strings-in-a-cell-array-and-their-index
 GNU octave analyse
 
-tic
-load analyse.dat
-[D,~,X] = unique(data);
-Y = histc(X,unique(X));
-Z = struct('name',D,'freq',num2cell(Y));
-toc
+listing of find_duplicate.m
 
-Z(2).freq
-ans =  3
+#! /opt/local/bin/octave-cli -qf
 
-Z(2).name
-ans = 010000011e1f213f0100000101000001
+clear all;
 
+printf('Data analysis\n');
 
-
-
-tic
-load analyse.dat
+tic;
+load analyse.dat;
 [D,~,X] = unique(data);
 [n, bin] = histc(X,unique(X));
 multiple = find(n > 1);
 index = find(ismember(bin, multiple));
+toc;
+
+printf('Result is:\n');
 index
-toc
 
 
 
