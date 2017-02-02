@@ -54,10 +54,10 @@ void usage(void) {
 	printf("\tWith 2 argument (full encryption tests): testAESkey <power> <type>\n");
 	printf("\t\t<power> -> 2^power keys generated\n");
 	printf("\t\t<type> -> key processing type 'rand', 'incr'\n");
-	printf("\tWith 3 argument (partial encryption tests): testAESkey <power> <decal> <round>\n");
+	printf("\tWith 3 argument (display expansion key): testAESkey <power> <decal> <schema>\n");
 	printf("\t\t<power> -> 2^power keys generated\n");
 	printf("\t\t<decal> -> value for decalage of bytes\n");
-	printf("\t\t<round> -> number of rounds 0 >= r >= 10\n");
+	printf("\t\t<schema> -> schema of key padding 0 >= s >= 255\n");
 	printf("\tWith 4 argument (partial encryption tests): testAESkey <power> <decal> <round> <schema>\n");
 	printf("\t\t<power> -> 2^power keys generated\n");
 	printf("\t\t<decal> -> value for decalage of bytes\n");
@@ -192,6 +192,24 @@ void hexDump(FILE *fd, char *title, unsigned char *s, int length) {
 }
 
 
+void compactHexDump(unsigned char *s, char result[]) {
+	int byte = 0, r = 0, shift=0;
+
+	for (r=0; r<11; r++) {
+		for (byte=0; byte<16; byte++) {
+			shift = (r * keyLengthInByte) + byte;
+			if (shift == 0) {
+				sprintf(result, "%02x", s[shift]);
+			} else {
+				sprintf(result, "%s%02x", result, s[shift]);
+			}
+		}
+		sprintf(result, "%s ", result);
+	}
+	sprintf(result, "%s\n", result);
+}
+
+
 void displayResults(unsigned char clear[], unsigned char cipher[], unsigned char key[]) {
 	char resultClear[(clearLengthInByte*2)+1];
 	char resultKey[(keyLengthInByte*2)+1];
@@ -270,8 +288,11 @@ void AESdecrypt(unsigned char clear[], unsigned char cipher[], unsigned char key
 
 void AESdisplayExpansionCipherKey(unsigned char key[]) {
 	AES_KEY expandKey;
+	char result[keyLengthInByte*23];
 	AES_set_encrypt_key(key, keyLengthInByte*8, &expandKey);
 	hexDump(stdout, "AES_KEY", (unsigned char *)&expandKey, keyLengthInByte*11);
+	compactHexDump((unsigned char *)&expandKey, result);
+	printf("%s", result);
 }
 
 
@@ -339,13 +360,13 @@ void fullKeyExpansionTest(void) {
 				}
 				AESencrypt(clear, cipher, key);
 				fprintf(fic, "%s\n", printBlock(cipher, cipherLengthInByte, resultCipher));
-				if (i%step == 0) {
+				if (step == 1) {
 					printf("%lu\t", i);
 					displayResults(clear, cipher, key);
 				}
 			}
 			tac = clock();
-			if (step > 1) {
+			if ((verbose) && (step > 1)) {
 				printf("%lu\t", i-1);
 				displayResults(clear, cipher, key);
 			}
@@ -388,7 +409,7 @@ void partialKeyExpansionTest(void) {
 			intToSpecialHex(decal, i, keyLengthInByte, key);
 			AESencryptByRound(clear, cipher, key, roundNbr);
 			fprintf(fic, "%s\n", printBlock(cipher, cipherLengthInByte, resultCipher));
-			if ((verbose) && (i%step == 0)) {
+			if (step == 1) {
 				printf("%lu\t", i);
 				displayResults(clear, cipher, key);
 			}
@@ -397,6 +418,48 @@ void partialKeyExpansionTest(void) {
 		if ((verbose) && (step > 1)) {
 			printf("%lu\t", i-1);
 			displayResults(clear, cipher, key);
+		}
+		fclose(fic);
+		executionTime = (double)(tac - tic) / CLOCKS_PER_SEC;
+		printf("Execution time: %.8f\n", executionTime);
+	} else {
+		printf("INFO: file creation error\n");
+		exit(EXIT_FAILURE);
+	}
+}
+
+
+void displayKeyExpansion(void) {
+	clock_t tic, tac;
+	double executionTime = 0.0;
+	int step=0;
+	unsigned long i=0;
+	char nameResult[20];
+	char result[keyLengthInByte*23];
+	AES_KEY expandKey;
+	unsigned char key[keyLengthInByte];
+
+	couleur("31");
+	printf("\nAES tests: 2^%d=%lu iterations\n", power, iterations);
+	couleur("0");
+
+	sprintf(nameResult, "key_%d.dat", schema);
+	FILE *fic = fopen(nameResult, "w");
+	if (fic != NULL) {
+		if (power <= 8) { step=1; } else { step=100000; }
+		tic = clock();
+		for (i=0; i<iterations; i++) {
+			intToSpecialHex(decal, i, keyLengthInByte, key);
+			AES_set_encrypt_key(key, keyLengthInByte*8, &expandKey);
+			compactHexDump((unsigned char *)&expandKey, result);
+			fprintf(fic, "%s", result);
+			if (step == 1) {
+				printf("%lu %s", i, result);
+			}
+		}
+		tac = clock();
+		if ((verbose) && (step > 1)) {
+			printf("%lu\t", i-1);
 		}
 		fclose(fic);
 		executionTime = (double)(tac - tic) / CLOCKS_PER_SEC;
@@ -425,6 +488,7 @@ void vectorTest(void) {
 	displayResults(clear, cipher, key);
 	printf("Normal result: 3925841d02dc09fbdc118597196a0b32\n");
 	AESdisplayExpansionCipherKey(key);
+
 }
 
 
@@ -442,8 +506,8 @@ int main(int argc, char *argv[]) {
 			return(EXIT_SUCCESS);
 			break;
 		case 3:
-			decal = 16;
 			power = atoi(argv[1]);
+			decal = 16;
 			iterations = (unsigned long)pow(2, power);
 			if (!strncmp(argv[2], "rand", 4)) { randProcess = 1; }
 			clearScreen();
@@ -453,10 +517,10 @@ int main(int argc, char *argv[]) {
 		case 4:
 			power = atoi(argv[1]);
 			decal = atoi(argv[2]);
-			roundNbr = atoi(argv[3]);
+			schema = atoi(argv[3]);
 			iterations = (unsigned long)pow(2, power);
 			clearScreen();
-			partialKeyExpansionTest();
+			displayKeyExpansion();
 			return(EXIT_SUCCESS);
 			break;
 		case 5:
@@ -480,6 +544,10 @@ int main(int argc, char *argv[]) {
 
 
 /*
+TODO
+For one key print all 10 round keys
+
+
 https://fr.mathworks.com/matlabcentral/answers/197246-finding-duplicate-strings-in-a-cell-array-and-their-index
 GNU octave analyse
 
